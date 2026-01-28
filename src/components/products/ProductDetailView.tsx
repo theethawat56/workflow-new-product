@@ -12,6 +12,12 @@ import { AttachmentsList } from "@/components/products/AttachmentsList"
 import { EditProductDialog } from "@/components/products/EditProductDialog"
 import { deleteProductAction } from "@/app/actions/product"
 
+interface Props {
+    product: any
+    tasks: any[]
+    attachments: any[]
+}
+
 export function ProductDetailView({ product, tasks, attachments }: Props) {
     const router = useRouter()
     const [isDeleting, setIsDeleting] = useState(false)

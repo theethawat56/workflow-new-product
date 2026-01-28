@@ -121,7 +121,7 @@ export async function createProductAction(productData: ProductFormValues, roleDa
     }
 }
 
-export async function updateProductAction(productId: string, data: ProductFormValues) {
+export async function updateProductAction(productId: string, data: Partial<ProductFormValues>) {
     try {
         const user = await getServerSession(authOptions)
         const actorEmail = user?.user?.email || "system"
@@ -133,18 +133,19 @@ export async function updateProductAction(productId: string, data: ProductFormVa
 
         const oldGoLive = currentProduct.go_live_date
         const newGoLive = data.go_live_date
-        const dateChanged = oldGoLive !== newGoLive
+        const dateChanged = newGoLive && oldGoLive !== newGoLive
 
         // 2. Update Product
-        const gpPct = data.price > 0
+        const gpPct = (data.price !== undefined && data.cost !== undefined && data.price > 0)
             ? ((data.price - data.cost) / data.price) * 100
-            : 0
+            : ((currentProduct.price - currentProduct.cost) / currentProduct.price) * 100 // Fallback or strict calc? data usually complete except activate
 
+        // Join sales channels
         const salesChannelStr = Array.isArray(data.sales_channel)
             ? data.sales_channel.join(", ")
             : data.sales_channel
 
-        const updateData = {
+        const updateData: any = {
             sku_code: data.sku_code,
             product_name: data.product_name,
             category: data.category,
@@ -155,8 +156,46 @@ export async function updateProductAction(productId: string, data: ProductFormVa
             cost: data.cost,
             price: data.price,
             gp_pct: gpPct,
-            status: data.activate ? "Active" : "Draft", // Allow reactivation?
             updated_at: now
+        }
+
+        // Only update status if activate is explicitly passed
+        if (data.activate !== undefined) {
+            updateData.status = data.activate ? "Active" : "Draft"
+        }
+
+        await update("products", "product_id", productId, updateData)
+
+        // 3. Recalculate Tasks if Date Changed
+        if (dateChanged && (data.activate || currentProduct.status === "Active" || currentProduct.status === "Launched")) {
+            // Calculate difference in milliseconds
+            const oldDate = new Date(oldGoLive)
+            const newDate = new Date(newGoLive!)
+            const diffTime = newDate.getTime() - oldDate.getTime()
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+            if (diffDays !== 0) {
+                // Fetch all tasks for this product
+                const allTasks = await findAll<any>("product_tasks")
+                const productTasks = allTasks.filter(t => t.product_id === productId)
+
+                for (const task of productTasks) {
+                    const oldStart = new Date(task.start_date)
+                    const oldDue = new Date(task.due_date)
+
+                    const newStart = new Date(oldStart)
+                    newStart.setDate(newStart.getDate() + diffDays)
+
+                    const newDue = new Date(oldDue)
+                    newDue.setDate(newDue.getDate() + diffDays)
+
+                    await update("product_tasks", "product_task_id", task.product_task_id, {
+                        start_date: newStart.toISOString().split('T')[0],
+                        due_date: newDue.toISOString().split('T')[0],
+                        updated_at: now
+                    })
+                }
+            }
         }
 
         await update("products", "product_id", productId, updateData)

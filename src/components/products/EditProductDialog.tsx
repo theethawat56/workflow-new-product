@@ -31,9 +31,9 @@ import {
 import { CATEGORY_NAMES, PRODUCT_CATEGORIES } from "@/lib/constants"
 import { Edit } from "lucide-react"
 
-// Reuse product schema but omit activate or keep it? 
-// Schema has activate. We should keep it to status mapping logic in action.
-type FormValues = z.infer<typeof productSchema>
+// Reuse product schema but omit activate since it's handled via status updates
+const editFormSchema = productSchema.omit({ activate: true })
+type FormValues = z.infer<typeof editFormSchema>
 
 interface Props {
     product: any
@@ -55,7 +55,7 @@ export function EditProductDialog({ product }: Props) {
     // Parse existing values
     // We need to match the schema.
     const form = useForm<FormValues>({
-        resolver: zodResolver(productSchema),
+        resolver: zodResolver(editFormSchema),
         defaultValues: {
             sku_code: product.sku_code || "",
             product_name: product.product_name || "",
@@ -66,7 +66,6 @@ export function EditProductDialog({ product }: Props) {
             sales_channel: parseChannels(product.sales_channel),
             cost: Number(product.cost) || 0,
             price: Number(product.price) || 0,
-            activate: product.status === "Active" || product.status === "Launched"
         }
     })
 
@@ -83,10 +82,10 @@ export function EditProductDialog({ product }: Props) {
                 sales_channel: parseChannels(product.sales_channel),
                 cost: Number(product.cost) || 0,
                 price: Number(product.price) || 0,
-                activate: product.status === "Active" || product.status === "Launched"
             })
         }
     }, [open, product, form])
+
 
     const selectedCategory = form.watch("category")
     const subCategories = selectedCategory ? PRODUCT_CATEGORIES[selectedCategory] || [] : []
