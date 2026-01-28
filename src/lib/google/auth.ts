@@ -1,102 +1,105 @@
 import { NextAuthOptions } from "next-auth"
-import GoogleProvider from "next-auth/providers/google"
+import CredentialsProvider from "next-auth/providers/credentials"
+import { findOne } from "@/lib/db/adapter"
+import { compare } from "bcryptjs"
 
 // Extends NextAuth types to include our custom properties
 declare module "next-auth" {
     interface Session {
-        error?: "RefreshAccessTokenError"
-        accessToken?: string
+        user: {
+            name?: string | null
+            email?: string | null
+            image?: string | null
+            role?: string
+        }
+    }
+    interface User {
+        role?: string
     }
 }
 
 declare module "next-auth/jwt" {
     interface JWT {
-        accessToken?: string
-        refreshToken?: string
-        expiresAt?: number
-        error?: "RefreshAccessTokenError"
-    }
-}
-
-async function refreshAccessToken(token: any) {
-    try {
-        const url =
-            "https://oauth2.googleapis.com/token?" +
-            new URLSearchParams({
-                client_id: process.env.GOOGLE_CLIENT_ID!,
-                client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-                grant_type: "refresh_token",
-                refresh_token: token.refreshToken,
-            })
-
-        const response = await fetch(url, {
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-            method: "POST",
-        })
-
-        const refreshedTokens = await response.json()
-
-        if (!response.ok) {
-            throw refreshedTokens
-        }
-
-        return {
-            ...token,
-            accessToken: refreshedTokens.access_token,
-            expiresAt: Date.now() + refreshedTokens.expires_in * 1000,
-            // Fall back to old refresh token if new one is not returned
-            refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
-        }
-    } catch (error) {
-        console.error("Error refreshing access token", error)
-        return {
-            ...token,
-            error: "RefreshAccessTokenError",
-        }
+        role?: string
     }
 }
 
 export const authOptions: NextAuthOptions = {
     providers: [
-        GoogleProvider({
-            clientId: process.env.GOOGLE_CLIENT_ID!,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-            authorization: {
-                params: {
-                    scope: "openid email profile https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
-                    prompt: "consent",
-                    access_type: "offline",
-                    response_type: "code",
-                },
+        CredentialsProvider({
+            name: "Credentials",
+            credentials: {
+                email: { label: "Email", type: "email" },
+                password: { label: "Password", type: "password" }
             },
-        }),
-    ],
-    callbacks: {
-        async jwt({ token, account }) {
-            // Initial sign in
-            if (account) {
+            async authorize(credentials) {
+                if (!credentials?.email || !credentials?.password) {
+                    return null
+                }
+
+                console.log("Login Attempt:", credentials.email)
+
+                // 1. Fetch user from Sheet
+                const user = await findOne<any>("users", "email", credentials.email)
+
+                console.log("User Found:", user)
+
+                if (!user) {
+                    console.log("User not found in Sheet")
+                    return null
+                }
+
+                // Check active status (handle string "TRUE"/"FALSE" from sheets)
+                // Sheets often returns "TRUE" string for boolean columns
+                const isActive = user.active === true || String(user.active).toUpperCase() === "TRUE"
+                console.log("Is Active Check:", isActive, "Raw value:", user.active)
+
+                if (!isActive) {
+                    console.log("User is inactive")
+                    throw new Error("Account is pending approval.")
+                }
+
+                // 2. Verify Password
+                console.log("Verifying password...")
+                const isValid = await compare(credentials.password, user.password || "")
+                console.log("Password Valid:", isValid)
+
+                if (!isValid) {
+                    console.log("Invalid password")
+                    return null
+                }
+
+                // 3. Admin Override Logic (Hardcoded)
+                let role = user.role
+                if (user.email === "theethawat56@gmail.com") {
+                    role = "Admin"
+                }
+
                 return {
-                    accessToken: account.access_token,
-                    expiresAt: account.expires_at ? account.expires_at * 1000 : Date.now() + 3600 * 1000,
-                    refreshToken: account.refresh_token,
-                    ...token
+                    id: user.email,
+                    email: user.email,
+                    name: user.name,
+                    role: role,
                 }
             }
-
-            // Return previous token if the access token has not expired yet
-            if (token.expiresAt && Date.now() < token.expiresAt) {
-                return token
+        })
+    ],
+    pages: {
+        signIn: "/login",
+        // signOut: "/auth/signout",
+        // error: "/auth/error", // Error code passed in query string as ?error=
+        // newUser: "/auth/new-user" // New users will be directed here on first sign in (leave the property out if not of interest)
+    },
+    callbacks: {
+        async jwt({ token, user }) {
+            if (user) {
+                token.role = user.role
             }
-
-            // Access token has expired, try to update it
-            return refreshAccessToken(token)
+            return token
         },
         async session({ session, token }) {
-            session.accessToken = token.accessToken
-            if (token.error) {
-                session.error = token.error
+            if (session.user) {
+                session.user.role = token.role
             }
             return session
         },

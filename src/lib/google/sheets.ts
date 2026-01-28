@@ -1,20 +1,13 @@
 import { google } from "googleapis"
-import { getServerSession } from "next-auth"
-import { authOptions } from "./auth"
 
 export async function getSheetsClient() {
-    const session = await getServerSession(authOptions)
-
-    if (!session || !session.accessToken) {
-        throw new Error("Unauthorized: No session or access token found")
-    }
-
-    if (session.error === "RefreshAccessTokenError") {
-        throw new Error("Authentication Refresh Failed: Please sign out and sign in again.")
-    }
-
-    const auth = new google.auth.OAuth2()
-    auth.setCredentials({ access_token: session.accessToken })
+    const auth = new google.auth.GoogleAuth({
+        credentials: {
+            client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+            private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        },
+        scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    })
 
     return google.sheets({ version: "v4", auth })
 }

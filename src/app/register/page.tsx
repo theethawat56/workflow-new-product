@@ -1,134 +1,172 @@
 "use client"
 
-import { useSession, signIn } from "next-auth/react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import * as z from "zod"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { USER_ROLES } from "@/lib/db/schema"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+    Form,
+    FormControl,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormMessage,
+} from "@/components/ui/form"
 import { registerUserAction } from "@/app/actions/user"
-import { getCurrentUser } from "@/lib/db/permissions"
-// Note: getCurrentUser is server side only, we check valid user via server action or just trust flow. 
-// Actually we should check if user already exists to redirect. 
-// But client side we rely on session.
+import Link from "next/link"
+import { Loader2 } from "lucide-react"
 
-// Correct logic:
-// 1. Check session. If no session, show Login button.
-// 2. If session, show Form.
-// 3. User submits form -> registerUserAction -> redirect to dashboard.
+const registerSchema = z.object({
+    name: z.string().min(2, "Name must be at least 2 characters"),
+    email: z.string().email("Invalid email address"),
+    password: z.string().min(6, "Password must be at least 6 characters"),
+    confirmPassword: z.string()
+}).refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ["confirmPassword"],
+})
+
+type RegisterFormValues = z.infer<typeof registerSchema>
 
 export default function RegisterPage() {
-    const { data: session, status } = useSession()
     const router = useRouter()
+    const [isSubmitting, setIsSubmitting] = useState(false)
+    const [submitError, setSubmitError] = useState("")
 
-    // Form State
-    const [name, setName] = useState("")
-    const [role, setRole] = useState("PM")
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState("")
-
-    useEffect(() => {
-        if (session?.user?.name) {
-            setName(session.user.name)
+    const form = useForm<RegisterFormValues>({
+        resolver: zodResolver(registerSchema),
+        defaultValues: {
+            name: "",
+            email: "",
+            password: "",
+            confirmPassword: ""
         }
-    }, [session])
+    })
 
-    const handleRegister = async () => {
-        if (!session?.user?.email) return
-        setLoading(true)
-        setError("")
-
+    const onSubmit = async (data: RegisterFormValues) => {
+        setIsSubmitting(true)
+        setSubmitError("")
         try {
             const res = await registerUserAction({
-                email: session.user.email,
-                name: name || session.user.name,
-                role: role
+                name: data.name,
+                email: data.email,
+                password: data.password
             })
 
             if (res.success) {
-                // Force a hard navigation to refresh server components/permissions
-                window.location.href = "/dashboard"
+                // Success message handling
+                // Ideally show a toast or message. For now alert and redirect.
+                alert(res.message)
+                if (res.message.includes("approval")) {
+                    router.push("/login")
+                } else {
+                    router.push("/dashboard")
+                }
             } else {
-                setError(res.message)
-                setLoading(false)
+                setSubmitError(res.message || "Registration failed")
             }
-        } catch (e: any) {
-            setError(e.message)
-            setLoading(false)
+        } catch (error) {
+            setSubmitError("Something went wrong")
+        } finally {
+            setIsSubmitting(false)
         }
     }
 
-    if (status === "loading") {
-        return <div className="flex items-center justify-center min-h-screen">Loading...</div>
-    }
-
-    if (status === "unauthenticated") {
-        return (
-            <div className="flex items-center justify-center min-h-screen bg-gray-50">
-                <Card className="w-[350px]">
-                    <CardHeader>
-                        <CardTitle>Welcome</CardTitle>
-                        <CardDescription>Please sign in to continue.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <Button onClick={() => signIn("google")} className="w-full">
-                            Sign in with Google
-                        </Button>
-                    </CardContent>
-                </Card>
-            </div>
-        )
-    }
-
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-50">
-            <Card className="w-[400px]">
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+            <Card className="w-full max-w-md shadow-lg border-0 bg-white/80 backdrop-blur-sm dark:bg-gray-950/50">
                 <CardHeader>
-                    <CardTitle>Complete Registration</CardTitle>
-                    <CardDescription>
-                        Confirm your details to access the dashboard.
+                    <CardTitle className="text-2xl font-bold text-center">Create an Account</CardTitle>
+                    <CardDescription className="text-center">
+                        Register to access the workflow system
                     </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium">Email</label>
-                        <Input value={session?.user?.email || ""} disabled />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium">Name</label>
-                        <Input
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="Your Name"
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium">Role</label>
-                        <Select value={role} onValueChange={setRole}>
-                            <SelectTrigger>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {USER_ROLES.map((r) => (
-                                    <SelectItem key={r} value={r}>
-                                        {r}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    {error && <p className="text-red-500 text-sm">{error}</p>}
+                <CardContent>
+                    <Form {...form}>
+                        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                            <FormField
+                                control={form.control}
+                                name="name"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Full Name</FormLabel>
+                                        <FormControl>
+                                            <Input placeholder="John Doe" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="email"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Email</FormLabel>
+                                        <FormControl>
+                                            <Input placeholder="name@example.com" type="email" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="password"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Password</FormLabel>
+                                        <FormControl>
+                                            <Input placeholder="******" type="password" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="confirmPassword"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Confirm Password</FormLabel>
+                                        <FormControl>
+                                            <Input placeholder="******" type="password" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+
+                            {submitError && (
+                                <div className="text-sm text-red-500 font-medium text-center">
+                                    {submitError}
+                                </div>
+                            )}
+
+                            <Button type="submit" className="w-full" disabled={isSubmitting}>
+                                {isSubmitting ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Creating Account...
+                                    </>
+                                ) : (
+                                    "Register"
+                                )}
+                            </Button>
+                        </form>
+                    </Form>
                 </CardContent>
-                <CardFooter>
-                    <Button
-                        onClick={handleRegister}
-                        disabled={loading}
-                        className="w-full"
-                    >
-                        {loading ? "Registering..." : "Complete Registration"}
-                    </Button>
+                <CardFooter className="flex justify-center">
+                    <p className="text-sm text-muted-foreground">
+                        Already have an account?{" "}
+                        <Link href="/login" className="text-primary hover:underline font-medium">
+                            Sign in here
+                        </Link>
+                    </p>
                 </CardFooter>
             </Card>
         </div>

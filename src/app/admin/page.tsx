@@ -4,13 +4,17 @@ import { UsersTable } from "@/components/admin/UsersTable"
 import { DatabaseManagementSection } from "@/components/admin/DatabaseManagementSection"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/google/auth"
+import { requireAdmin } from "@/lib/db/permissions"
 import { redirect } from "next/navigation"
 
 export default async function AdminPage() {
     const session = await getServerSession(authOptions)
     if (!session) {
-        redirect("/api/auth/signin")
+        redirect("/login")
     }
+
+    // Enforce Admin Role
+    await requireAdmin()
 
     const users = await findAll<any>("users")
 

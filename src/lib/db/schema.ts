@@ -1,7 +1,7 @@
 export const SHEETS_CONFIG = {
     users: {
         name: "users",
-        headers: ["email", "name", "role", "active"],
+        headers: ["email", "name", "role", "active", "password"],
     },
     role_defaults: {
         name: "role_defaults",

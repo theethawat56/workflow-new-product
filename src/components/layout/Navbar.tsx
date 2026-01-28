@@ -35,7 +35,9 @@ export function Navbar() {
                     </span>
                 </Link>
                 <nav className="flex items-center space-x-6 text-sm font-medium">
-                    {links.map((link) => (
+                    {links.filter(link =>
+                        link.label !== "Admin" || session?.user?.role === "Admin"
+                    ).map((link) => (
                         <Link
                             key={link.href}
                             href={link.href}
@@ -75,7 +77,9 @@ export function Navbar() {
                             </DropdownMenuContent>
                         </DropdownMenu>
                     ) : (
-                        <Button onClick={() => signIn("google")}>Login</Button>
+                        <Link href="/login">
+                            <Button>Login</Button>
+                        </Link>
                     )}
                 </div>
             </div>
