@@ -4,72 +4,102 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Muji Palette - Light Mode (Default) */
+    /* Background: #F8F7F3 (Cream Paper) */
+    --background: 48 15% 96%;
+    /* Foreground: #3A3A3A (Charcoal) */
+    --foreground: 0 0% 23%;
 
+    /* Sidebar: #F2F0EA */
+    --sidebar: 45 15% 93%;
+    --sidebar-foreground: 0 0% 23%;
+
+    /* Card: #FFFFFF */
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
- 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
- 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
- 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
- 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.16 16.3% 46.9%;
- 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
- 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --card-foreground: 0 0% 23%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
- 
-    --radius: 0.5rem;
+    /* Popover same as card */
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 23%;
+
+    /* Primary: #A68B6C (Muted Beige / Kraft Paper) */
+    --primary: 32 25% 54%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary: very light gray #F5F5F5 */
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 23%;
+
+    /* Muted: #7F7F7F (Warm Gray) */
+    --muted: 0 0% 50%;
+    --muted-foreground: 0 0% 60%;
+
+    /* Accent: same as primary for active states, or slightly darker */
+    --accent: 32 25% 54%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Destructive: #B86F6F (Desaturated Terra Cotta) */
+    --destructive: 0 35% 58%;
+    --destructive-foreground: 0 0% 98%;
+
+    /* Border: #E0E0E0 */
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    --ring: 32 25% 54%;
+
+    /* Radius: 12px = 0.75rem */
+    --radius: 0.75rem;
+
+    /* Custom Status Colors */
+    --success: 108 10% 58%;
+    /* #8F9E8B Sage Green */
+    --warning: 41 45% 69%;
+    /* #D4BC8B Muted Mustard */
   }
- 
+
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
- 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
- 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
- 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
- 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
- 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
- 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
- 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
- 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    /* Warm Dark Mode (Charcoal Base) */
+    --background: 0 0% 20%;
+    --foreground: 48 15% 96%;
+
+    --sidebar: 0 0% 18%;
+    --sidebar-foreground: 48 15% 96%;
+
+    --card: 0 0% 23%;
+    --card-foreground: 48 15% 96%;
+
+    --popover: 0 0% 23%;
+    --popover-foreground: 48 15% 96%;
+
+    --primary: 32 25% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 28%;
+    --secondary-foreground: 48 15% 96%;
+
+    --muted: 0 0% 40%;
+    --muted-foreground: 0 0% 60%;
+
+    --accent: 32 25% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 35% 58%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 30%;
+    --input: 0 0% 30%;
+    --ring: 32 25% 60%;
+
+    --success: 108 15% 45%;
+    --warning: 41 40% 55%;
   }
 }
- 
+
 @layer base {
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
   }

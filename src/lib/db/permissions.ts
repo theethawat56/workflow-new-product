@@ -13,14 +13,15 @@ export async function getCurrentUser() {
 }
 
 export async function requireAdmin() {
-    const user = await getCurrentUser()
+    const session = await getServerSession(authOptions)
 
-    // If no user found in DB, arguably they have no role. 
-    // BUT for bootstrapping, maybe first user is Admin? 
-    // Logic: If users sheet is empty, allow? No, `init` handles seeding.
-    // If user not in DB, they are not Admin.
+    // Debug log to see what's happening on server
+    console.log("requireAdmin check:", {
+        email: session?.user?.email,
+        role: session?.user?.role
+    })
 
-    if (!user || user.role !== "Admin") {
+    if (!session || session.user.role !== "Admin") {
         redirect("/dashboard?error=Unauthorized")
     }
 }

@@ -16,73 +16,54 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 export function Navbar() {
-    const pathname = usePathname()
     const { data: session } = useSession()
 
-    const links = [
-        { href: "/dashboard", label: "Dashboard" },
-        { href: "/products", label: "Products" },
-        // Only show admin if role is Admin? We can check session user role later if stored
-        { href: "/admin", label: "Admin" },
-    ]
-
     return (
-        <div className="border-b bg-background">
-            <div className="flex h-16 items-center px-4 md:px-8">
-                <Link href="/" className="mr-6 flex items-center space-x-2">
-                    <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                        LaunchFlow
-                    </span>
-                </Link>
-                <nav className="flex items-center space-x-6 text-sm font-medium">
-                    {links.filter(link =>
-                        link.label !== "Admin" || session?.user?.role === "Admin"
-                    ).map((link) => (
-                        <Link
-                            key={link.href}
-                            href={link.href}
-                            className={cn(
-                                "transition-colors hover:text-foreground/80",
-                                pathname.startsWith(link.href) ? "text-foreground" : "text-foreground/60"
-                            )}
-                        >
-                            {link.label}
-                        </Link>
-                    ))}
-                </nav>
-                <div className="ml-auto flex items-center space-x-4">
-                    {session ? (
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                                    <Avatar className="h-8 w-8">
-                                        <AvatarImage src={session.user?.image || ""} alt={session.user?.name || ""} />
-                                        <AvatarFallback>{session.user?.name?.[0]}</AvatarFallback>
-                                    </Avatar>
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent className="w-56" align="end" forceMount>
-                                <DropdownMenuLabel className="font-normal">
-                                    <div className="flex flex-col space-y-1">
-                                        <p className="text-sm font-medium leading-none">{session.user?.name}</p>
-                                        <p className="text-xs leading-none text-muted-foreground">
-                                            {session.user?.email}
-                                        </p>
-                                    </div>
-                                </DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => signOut()}>
-                                    Log out
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    ) : (
-                        <Link href="/login">
-                            <Button>Login</Button>
-                        </Link>
-                    )}
-                </div>
+        <header className="h-16 border-b border-border bg-background/50 backdrop-blur-sm px-6 flex items-center justify-between sticky top-0 z-10">
+            {/* Left side: Page Title or Breadcrumb (placeholder for now) */}
+            <div className="font-medium text-muted-foreground md:hidden">
+                LaunchFlow
             </div>
-        </div>
+            <div className="hidden md:block text-sm text-muted-foreground">
+                {/* Could add dynamic breadcrumbs here later */}
+                Workflow Workspace
+            </div>
+
+            {/* Right side: Search & Profile */}
+            <div className="flex items-center gap-4">
+                {session ? (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="relative h-9 w-9 rounded-full hover:bg-secondary">
+                                <Avatar className="h-8 w-8 border border-border">
+                                    <AvatarImage src={session.user?.image || ""} alt={session.user?.name || ""} />
+                                    <AvatarFallback className="bg-white text-muted-foreground">
+                                        {session.user?.name?.[0]}
+                                    </AvatarFallback>
+                                </Avatar>
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-56 bg-white border-border shadow-[0_4px_12px_rgba(0,0,0,0.05)]" align="end" forceMount>
+                            <DropdownMenuLabel className="font-normal">
+                                <div className="flex flex-col space-y-1">
+                                    <p className="text-sm font-medium leading-none text-foreground">{session.user?.name}</p>
+                                    <p className="text-xs leading-none text-muted-foreground">
+                                        {session.user?.email}
+                                    </p>
+                                </div>
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator className="bg-border" />
+                            <DropdownMenuItem onClick={() => signOut()} className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer">
+                                Log out
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                ) : (
+                    <Link href="/login">
+                        <Button variant="default" className="bg-primary text-primary-foreground hover:opacity-90">Login</Button>
+                    </Link>
+                )}
+            </div>
+        </header>
     )
 }

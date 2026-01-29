@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ChecklistTable } from "@/components/products/ChecklistTable"
 import { GanttChart } from "@/components/products/GanttChart"
+import { KanbanBoard } from "@/components/products/KanbanBoard"
 import { AttachmentsList } from "@/components/products/AttachmentsList"
 import { EditProductDialog } from "@/components/products/EditProductDialog"
 import { deleteProductAction } from "@/app/actions/product"
@@ -67,6 +68,7 @@ export function ProductDetailView({ product, tasks, attachments }: Props) {
                 <TabsList>
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="checklist">Checklist</TabsTrigger>
+                    <TabsTrigger value="kanban">Kanban</TabsTrigger>
                     <TabsTrigger value="gantt">Gantt</TabsTrigger>
                     <TabsTrigger value="files">Files</TabsTrigger>
                     {/* Activity coming later */}
@@ -135,6 +137,10 @@ export function ProductDetailView({ product, tasks, attachments }: Props) {
                             <ChecklistTable tasks={tasks} />
                         </CardContent>
                     </Card>
+                </TabsContent>
+
+                <TabsContent value="kanban">
+                    <KanbanBoard tasks={tasks} />
                 </TabsContent>
 
                 <TabsContent value="gantt">
