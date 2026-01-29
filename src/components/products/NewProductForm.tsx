@@ -333,12 +333,20 @@ export function NewProductForm({ users, roleDefaults }: Props) {
                                                     name={`assignments.${index}.owner_email`}
                                                     render={({ field }) => (
                                                         <FormItem className="mb-0">
-                                                            <FormControl>
-                                                                {/* Simple Input for email as Select might be too complex with users list, but Select is better if we have users */}
-                                                                {/* Using Input for now for flexibility, or could use Select if users prop has data */}
-                                                                <Input placeholder="email@example.com" {...field} />
-                                                            </FormControl>
-                                                            {/* We could also add a Select here if users list is populated */}
+                                                            <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                                                                <FormControl>
+                                                                    <SelectTrigger className="h-8">
+                                                                        <SelectValue placeholder="Select owner" />
+                                                                    </SelectTrigger>
+                                                                </FormControl>
+                                                                <SelectContent>
+                                                                    {users.map((user) => (
+                                                                        <SelectItem key={user.email} value={user.email}>
+                                                                            {user.name || user.email}
+                                                                        </SelectItem>
+                                                                    ))}
+                                                                </SelectContent>
+                                                            </Select>
                                                         </FormItem>
                                                     )}
                                                 />

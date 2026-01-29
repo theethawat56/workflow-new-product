@@ -19,6 +19,8 @@ interface Product {
     go_live_date: string
     sales_channel: string
     status: string
+    active_task?: string // Added
+    active_task_due_date?: string // Added
 }
 
 export function ProductList({ initialProducts }: { initialProducts: Product[] }) {
@@ -63,6 +65,9 @@ export function ProductList({ initialProducts }: { initialProducts: Product[] })
                         <SelectItem value="Hold">Hold</SelectItem>
                     </SelectContent>
                 </Select>
+                {/* Keep Channel Filter or remove? Keeping for utility even if column hidden? */}
+                {/* User asked to "change product page on column", implying REPLACEMENT. */}
+                {/* But filter might still be useful. Let's keep it. */}
                 <Select value={channelFilter} onValueChange={setChannelFilter}>
                     <SelectTrigger className="w-[180px]">
                         <SelectValue placeholder="Channel" />
@@ -85,8 +90,8 @@ export function ProductList({ initialProducts }: { initialProducts: Product[] })
                             <TableHead>Name</TableHead>
                             <TableHead>Category</TableHead>
                             <TableHead>Launch Month</TableHead>
-                            <TableHead>Channel</TableHead>
-                            <TableHead>Go Live</TableHead>
+                            <TableHead>Active Task</TableHead>
+                            <TableHead>Due Date</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Action</TableHead>
                         </TableRow>
@@ -105,9 +110,17 @@ export function ProductList({ initialProducts }: { initialProducts: Product[] })
                                     <TableCell>{product.product_name}</TableCell>
                                     <TableCell>{product.category}</TableCell>
                                     <TableCell>{product.launch_month}</TableCell>
-                                    <TableCell>{product.sales_channel}</TableCell>
-                                    <TableCell>{product.go_live_date}</TableCell>
-
+                                    <TableCell>
+                                        {/* Show Active Task */}
+                                        {product.active_task && product.active_task !== '-' ? (
+                                            <Badge variant="secondary" className="font-normal">
+                                                {product.active_task}
+                                            </Badge>
+                                        ) : (
+                                            <span className="text-muted-foreground">-</span>
+                                        )}
+                                    </TableCell>
+                                    <TableCell>{product.active_task_due_date || '-'}</TableCell>
                                     <TableCell>
                                         <Select
                                             defaultValue={product.status}

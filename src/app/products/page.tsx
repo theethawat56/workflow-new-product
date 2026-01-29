@@ -6,8 +6,28 @@ import Link from "next/link"
 // Force dynamic
 export const dynamic = 'force-dynamic'
 
+interface ProductTask {
+    product_id: string
+    task_name: string
+    status: string
+    due_date?: string
+}
+
 export default async function ProductsPage() {
     const products = await findAll<any>("products")
+    const tasks = await findAll<ProductTask>("product_tasks")
+
+    // Enhance products with active task
+    const productsWithActiveTask = products.map(p => {
+        // Find first task that is In Progress
+        // We really should sort by something, but for now we take the first found in the list which usually follows creation order/id order.
+        const activeTask = tasks.find(t => t.product_id === p.product_id && t.status === 'InProgress')
+        return {
+            ...p,
+            active_task: activeTask ? activeTask.task_name : '-',
+            active_task_due_date: activeTask ? activeTask.due_date : '-'
+        }
+    })
 
     return (
         <div className="container mx-auto py-10">
@@ -18,7 +38,7 @@ export default async function ProductsPage() {
                 </Button>
             </div>
 
-            <ProductList initialProducts={products} />
+            <ProductList initialProducts={productsWithActiveTask} />
         </div>
     )
 }

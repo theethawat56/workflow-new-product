@@ -91,11 +91,26 @@ export function UsersTable({ users }: Props) {
                                         </SelectContent>
                                     </Select>
                                 </TableCell>
-                                <TableCell>{user.active ? "Yes" : "No"}</TableCell>
+                                <TableCell>
+                                    <Select
+                                        defaultValue={user.active ? "TRUE" : "FALSE"}
+                                        onValueChange={async (val) => {
+                                            const isActive = val === "TRUE"
+                                            const res = await updateUserAction(user.email, { active: isActive })
+                                            if (!res.success) alert("Failed to update status: " + res.message)
+                                        }}
+                                    >
+                                        <SelectTrigger className="w-[100px] h-8">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="TRUE">Active</SelectItem>
+                                            <SelectItem value="FALSE">Inactive</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </TableCell>
                                 <TableCell className="text-right">
-                                    <Button variant="ghost" size="sm" onClick={() => toggleActive(user)}>
-                                        {user.active ? "Deactivate" : "Activate"}
-                                    </Button>
+                                    {/* Action button removed as per request to use dropdown on Active column */}
                                 </TableCell>
                             </TableRow>
                         ))}

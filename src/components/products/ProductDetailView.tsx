@@ -12,6 +12,8 @@ import { KanbanBoard } from "@/components/products/KanbanBoard"
 import { AttachmentsList } from "@/components/products/AttachmentsList"
 import { EditProductDialog } from "@/components/products/EditProductDialog"
 import { deleteProductAction } from "@/app/actions/product"
+import { AdminButtons } from "@/components/products/AdminButtons"
+import { FinancialCards, CostPriceCard } from "@/components/products/FinancialCards"
 
 interface Props {
     product: any
@@ -53,10 +55,9 @@ export function ProductDetailView({ product, tasks, attachments }: Props) {
                     <p className="text-muted-foreground">{product.sku_code} • {product.sales_channel}</p>
                 </div>
                 <div className="flex items-center gap-4">
-                    <Button variant="destructive" size="sm" onClick={handleDelete} disabled={isDeleting}>
-                        {isDeleting ? "Deleting..." : "Delete Product"}
-                    </Button>
-                    <EditProductDialog product={product} />
+                    {/* Only Admin can Edit/Delete */}
+                    <AdminButtons productId={product.product_id} isDeleting={isDeleting} onDelete={handleDelete} product={product} />
+
                     <div className="text-right">
                         <div className="text-sm font-medium text-muted-foreground">Progress</div>
                         <div className="text-2xl font-bold">{progress}%</div>
@@ -84,6 +85,7 @@ export function ProductDetailView({ product, tasks, attachments }: Props) {
                             <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Launch Month</CardTitle></CardHeader>
                             <CardContent className="font-bold text-lg">{product.launch_month}</CardContent>
                         </Card>
+
                         <Card>
                             <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Category</CardTitle></CardHeader>
                             <CardContent className="font-bold text-lg">
@@ -91,22 +93,12 @@ export function ProductDetailView({ product, tasks, attachments }: Props) {
                                 {product.sub_category && <span className="block text-sm font-normal text-muted-foreground">{product.sub_category}</span>}
                             </CardContent>
                         </Card>
-                        <Card>
-                            <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">GP %</CardTitle></CardHeader>
-                            <CardContent className="font-bold text-lg text-green-600">
-                                {product.gp_pct ? `${Number(product.gp_pct).toFixed(2)}%` : "N/A"}
-                            </CardContent>
-                        </Card>
+                        {/* GP Card Hidden for CS/AfterService */}
+                        <FinancialCards product={product} />
                     </div>
-                    <Card className="mt-6">
-                        <CardHeader>
-                            <CardTitle>Details</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid grid-cols-2 gap-4">
-                            <div><strong>Cost:</strong> {product.cost}</div>
-                            <div><strong>Price:</strong> {product.price}</div>
-                        </CardContent>
-                    </Card>
+
+                    {/* Cost/Price Details Hidden for CS/AfterService */}
+                    <CostPriceCard product={product} />
 
                     {/* Product Specific Details from Checklist */}
                     <Card className="mt-6">
