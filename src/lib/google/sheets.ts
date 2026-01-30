@@ -1,6 +1,16 @@
 import { google } from "googleapis"
 
 export async function getSheetsClient() {
+    // If we have a refresh token, use OAuth (User Identity)
+    if (process.env.GOOGLE_REFRESH_TOKEN) {
+        const oauth2Client = new google.auth.OAuth2(
+            process.env.GOOGLE_CLIENT_ID,
+            process.env.GOOGLE_CLIENT_SECRET
+        )
+        oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN })
+        return google.sheets({ version: "v4", auth: oauth2Client })
+    }
+
     const auth = new google.auth.GoogleAuth({
         credentials: {
             client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,

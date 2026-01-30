@@ -1,8 +1,18 @@
 "use server"
 
-import { create, update, findOne } from "@/lib/db/adapter"
+import { create, update, findOne, findAll } from "@/lib/db/adapter"
 import { revalidatePath } from "next/cache"
 import { hash } from "bcryptjs"
+
+export async function getUsersAction() {
+    try {
+        const users = await findAll<any>("users")
+        // Filter out sensitive data if needed, though for admin internal tool email/name is fine
+        return { success: true, data: users }
+    } catch (error: any) {
+        return { success: false, message: error.message }
+    }
+}
 
 export async function createUserAction(data: any) {
     try {

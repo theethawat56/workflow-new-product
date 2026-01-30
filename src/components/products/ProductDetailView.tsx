@@ -14,6 +14,7 @@ import { EditProductDialog } from "@/components/products/EditProductDialog"
 import { deleteProductAction } from "@/app/actions/product"
 import { AdminButtons } from "@/components/products/AdminButtons"
 import { FinancialCards, CostPriceCard } from "@/components/products/FinancialCards"
+import { ProductMetrics } from "@/components/products/ProductMetrics"
 
 interface Props {
     product: any
@@ -68,6 +69,7 @@ export function ProductDetailView({ product, tasks, attachments }: Props) {
             <Tabs defaultValue="overview" className="space-y-4">
                 <TabsList>
                     <TabsTrigger value="overview">Overview</TabsTrigger>
+                    <TabsTrigger value="metrics">Metrics</TabsTrigger>
                     <TabsTrigger value="checklist">Checklist</TabsTrigger>
                     <TabsTrigger value="kanban">Kanban</TabsTrigger>
                     <TabsTrigger value="gantt">Gantt</TabsTrigger>
@@ -120,6 +122,10 @@ export function ProductDetailView({ product, tasks, attachments }: Props) {
                             )}
                         </CardContent>
                     </Card>
+                </TabsContent>
+
+                <TabsContent value="metrics">
+                    <ProductMetrics product={product} tasks={tasks} />
                 </TabsContent>
 
                 <TabsContent value="checklist">

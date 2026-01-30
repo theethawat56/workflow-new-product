@@ -1,15 +1,16 @@
 "use client"
 
-import { useState } from "react"
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet"
+import { useState, useEffect } from "react"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { updateTaskAction } from "@/app/actions/task"
-import { cn } from "@/lib/utils"
+import { getUsersAction } from "@/app/actions/user"
 
 interface TaskDetailProps {
     task: any
@@ -18,15 +19,41 @@ interface TaskDetailProps {
 }
 
 export function TaskDetailSheet({ task, open, onOpenChange }: TaskDetailProps) {
-    const [status, setStatus] = useState(task.status)
+    const [status, setStatus] = useState(task.status || "NotStarted")
     const [notes, setNotes] = useState(task.notes || "")
+    const [startDate, setStartDate] = useState(task.start_date || "")
+    const [dueDate, setDueDate] = useState(task.due_date || "")
+    const [ownerEmail, setOwnerEmail] = useState(task.owner_email || "")
+    const [users, setUsers] = useState<any[]>([])
+
+    // Reset state when task changes
+    useEffect(() => {
+        setStatus(task.status || "NotStarted")
+        setNotes(task.notes || "")
+        setStartDate(task.start_date || "")
+        setDueDate(task.due_date || "")
+        setOwnerEmail(task.owner_email || "")
+    }, [task])
+
+    // Fetch users on mount
+    useEffect(() => {
+        getUsersAction().then(res => {
+            if (res.success) {
+                setUsers(res.data || [])
+            }
+        })
+    }, [])
+
     const [isLoading, setIsLoading] = useState(false)
 
     const handleSave = async () => {
         setIsLoading(true)
         await updateTaskAction(task.product_task_id, task.product_id, {
             status,
-            notes
+            notes,
+            start_date: startDate,
+            due_date: dueDate,
+            owner_email: ownerEmail
         })
         setIsLoading(false)
         onOpenChange(false)
@@ -41,12 +68,14 @@ export function TaskDetailSheet({ task, open, onOpenChange }: TaskDetailProps) {
                     <SheetTitle className="text-xl font-medium text-foreground leading-snug">
                         {task.task_name}
                     </SheetTitle>
-                    <SheetDescription className="mt-1.5 flex items-center gap-2">
-                        <Badge variant="outline" className="font-normal text-muted-foreground bg-transparent">
-                            {task.phase}
-                        </Badge>
-                        <span className="text-muted-foreground">•</span>
-                        <span className="text-xs text-muted-foreground font-mono">{task.task_code}</span>
+                    <SheetDescription asChild className="mt-1.5 flex items-center gap-2">
+                        <div>
+                            <Badge variant="outline" className="font-normal text-muted-foreground bg-transparent">
+                                {task.phase}
+                            </Badge>
+                            <span className="text-muted-foreground">•</span>
+                            <span className="text-xs text-muted-foreground font-mono">{task.task_code}</span>
+                        </div>
                     </SheetDescription>
                 </div>
 
@@ -54,20 +83,20 @@ export function TaskDetailSheet({ task, open, onOpenChange }: TaskDetailProps) {
                 <div className="flex-1 overflow-y-auto p-6 space-y-8">
 
                     {/* Status & Properties */}
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8 ring-2 ring-white">
-                                <AvatarFallback className="text-xs bg-sidebar text-foreground">
-                                    {task.owner_role?.[0] || "?"}
-                                </AvatarFallback>
-                            </Avatar>
-                            <div className="text-sm">
-                                <p className="font-medium text-foreground">{task.owner_role || "Unassigned"}</p>
-                                <p className="text-xs text-muted-foreground">Owner</p>
+                    <div className="grid gap-6">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <Avatar className="h-8 w-8 ring-2 ring-white">
+                                    <AvatarFallback className="text-xs bg-sidebar text-foreground">
+                                        {task.owner_role?.[0] || "?"}
+                                    </AvatarFallback>
+                                </Avatar>
+                                <div className="text-sm">
+                                    <p className="font-medium text-foreground">{task.owner_role || "Unassigned"}</p>
+                                    <p className="text-xs text-muted-foreground">Owner Role</p>
+                                </div>
                             </div>
-                        </div>
 
-                        <div className="flex flex-col items-end gap-1">
                             <Select value={status} onValueChange={setStatus}>
                                 <SelectTrigger className="w-[140px] h-8 bg-white border-border shadow-sm">
                                     <SelectValue />
@@ -77,6 +106,43 @@ export function TaskDetailSheet({ task, open, onOpenChange }: TaskDetailProps) {
                                     <SelectItem value="InProgress">In Progress</SelectItem>
                                     <SelectItem value="Blocked">Blocked</SelectItem>
                                     <SelectItem value="Done">Done</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label className="text-xs text-muted-foreground">Start Date</Label>
+                                <Input
+                                    type="date"
+                                    value={startDate}
+                                    onChange={(e) => setStartDate(e.target.value)}
+                                    className="bg-white"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label className="text-xs text-muted-foreground">Due Date</Label>
+                                <Input
+                                    type="date"
+                                    value={dueDate}
+                                    onChange={(e) => setDueDate(e.target.value)}
+                                    className="bg-white"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs text-muted-foreground">Owner Email</Label>
+                            <Select value={ownerEmail} onValueChange={setOwnerEmail}>
+                                <SelectTrigger className="bg-white w-full">
+                                    <SelectValue placeholder="Select user" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {users.map((u) => (
+                                        <SelectItem key={u.email} value={u.email}>
+                                            {u.name || u.email}
+                                        </SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>
