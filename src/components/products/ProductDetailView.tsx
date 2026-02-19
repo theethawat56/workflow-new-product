@@ -89,6 +89,16 @@ export function ProductDetailView({ product, tasks, attachments }: Props) {
                             <CardContent className="font-bold text-lg">{product.launch_month}</CardContent>
                         </Card>
 
+                        {(product.fair_detail || product.date_of_fair) && (
+                            <Card >
+                                <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Fair Detail</CardTitle></CardHeader>
+                                <CardContent>
+                                    <div className="font-bold text-lg">{product.date_of_fair || "No Date"}</div>
+                                    <p className="text-sm text-muted-foreground mt-1">{product.fair_detail || "No details"}</p>
+                                </CardContent>
+                            </Card>
+                        )}
+
                         <Card>
                             <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Category</CardTitle></CardHeader>
                             <CardContent className="font-bold text-lg">

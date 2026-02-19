@@ -25,6 +25,8 @@ export const SHEETS_CONFIG = {
             "created_at",
             "updated_at",
             "created_by",
+            "fair_detail",
+            "date_of_fair",
         ],
     },
     product_role_assignments: {

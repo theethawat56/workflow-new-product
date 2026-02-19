@@ -66,6 +66,8 @@ export function EditProductDialog({ product }: Props) {
             sales_channel: parseChannels(product.sales_channel),
             cost: Number(product.cost) || 0,
             price: Number(product.price) || 0,
+            fair_detail: product.fair_detail || "",
+            date_of_fair: product.date_of_fair || "",
         }
     })
 
@@ -82,6 +84,8 @@ export function EditProductDialog({ product }: Props) {
                 sales_channel: parseChannels(product.sales_channel),
                 cost: Number(product.cost) || 0,
                 price: Number(product.price) || 0,
+                fair_detail: product.fair_detail || "",
+                date_of_fair: product.date_of_fair || "",
             })
         }
     }, [open, product, form])
@@ -270,6 +274,20 @@ export function EditProductDialog({ product }: Props) {
                                 <FormItem>
                                     <FormLabel>Price</FormLabel>
                                     <FormControl><Input type="number" step="0.01" {...field} /></FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )} />
+                            <FormField control={form.control} name="fair_detail" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Fair Detail</FormLabel>
+                                    <FormControl><Input placeholder="Details..." {...field} /></FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )} />
+                            <FormField control={form.control} name="date_of_fair" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Date of Fair</FormLabel>
+                                    <FormControl><Input type="date" {...field} /></FormControl>
                                     <FormMessage />
                                 </FormItem>
                             )} />

@@ -62,6 +62,8 @@ export function NewProductForm({ users, roleDefaults }: Props) {
             sales_channel: [],
             cost: 0,
             price: 0,
+            fair_detail: "",
+            date_of_fair: "",
             activate: false,
             assignments: defaultAssignments
         },
@@ -96,6 +98,8 @@ export function NewProductForm({ users, roleDefaults }: Props) {
                 sales_channel: data.sales_channel,
                 cost: data.cost,
                 price: data.price,
+                fair_detail: data.fair_detail,
+                date_of_fair: `'${data.date_of_fair}`, // Force string format
                 activate: data.activate
             }
             const roleData = {
@@ -123,7 +127,8 @@ export function NewProductForm({ users, roleDefaults }: Props) {
         if (step === 1) {
             valid = await form.trigger([
                 "sku_code", "product_name", "category", "sub_category",
-                "launch_month", "go_live_date", "sales_channel", "cost", "price"
+                "launch_month", "go_live_date", "sales_channel", "cost", "price",
+                "fair_detail", "date_of_fair"
             ])
         } else if (step === 2) {
             valid = await form.trigger(["assignments"])
@@ -298,6 +303,20 @@ export function NewProductForm({ users, roleDefaults }: Props) {
                                     <FormMessage />
                                 </FormItem>
                             )} />
+                            <FormField control={form.control} name="fair_detail" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Fair Detail</FormLabel>
+                                    <FormControl><Input placeholder="Details about the fair..." {...field} /></FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )} />
+                            <FormField control={form.control} name="date_of_fair" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Date of Fair</FormLabel>
+                                    <FormControl><Input type="date" {...field} /></FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )} />
                         </CardContent>
                         <CardFooter className="justify-end">
                             <Button type="button" onClick={nextStep}>Next: Role Assignment</Button>
@@ -386,7 +405,10 @@ export function NewProductForm({ users, roleDefaults }: Props) {
                                 <div><strong>Sub-Category:</strong> {form.getValues("sub_category")}</div>
                                 <div><strong>Live Date:</strong> {form.getValues("go_live_date")}</div>
                                 <div><strong>Cost:</strong> {form.getValues("cost")}</div>
+                                <div><strong>Cost:</strong> {form.getValues("cost")}</div>
                                 <div><strong>Price:</strong> {form.getValues("price")}</div>
+                                <div><strong>Fair Detail:</strong> {form.getValues("fair_detail")}</div>
+                                <div><strong>Date of Fair:</strong> {form.getValues("date_of_fair")}</div>
                             </div>
 
                             <FormField control={form.control} name="activate" render={({ field }) => (
