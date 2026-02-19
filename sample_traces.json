@@ -1,0 +1,166 @@
+[
+    {
+        "id": "trace_001_ask_no_context",
+        "request": {
+            "content": "ขอข้อมูลสินค้า"
+        },
+        "response": {
+            "assistant_message": {
+                "role": "assistant",
+                "content": "ต้องการดูข้อมูลของ SKU ไหนครับ? รบกวนระบุ SKU หรือเลือกจากรายการด้านซ้ายได้เลยครับ"
+            },
+            "updated_context": {
+                "user": {
+                    "email": "user@example.com",
+                    "role": "Viewer"
+                },
+                "pending_intent": {
+                    "type": "product_info",
+                    "original_text": "ขอข้อมูลสินค้า"
+                }
+            },
+            "ui_events": [],
+            "debug_trace": {
+                "trace_id": "uuid-1",
+                "stage": "execution",
+                "router_decision": "product_info",
+                "pending_intent_after": {
+                    "type": "product_info",
+                    "original_text": "ขอข้อมูลสินค้า"
+                }
+            }
+        }
+    },
+    {
+        "id": "trace_002_provide_sku_replay",
+        "request": {
+            "content": "SKU-001",
+            "context": {
+                "pending_intent": {
+                    "type": "product_info",
+                    "original_text": "ขอข้อมูลสินค้า"
+                }
+            }
+        },
+        "response": {
+            "assistant_message": {
+                "role": "assistant",
+                "content": "ข้อมูลสินค้า **Product A** (SKU-001):\nSTATUS: Launched\nPRICE: 100"
+            },
+            "updated_context": {
+                "currentSku": "SKU-001",
+                "pending_intent": null
+            },
+            "ui_events": [
+                {
+                    "type": "set_url_sku",
+                    "payload": {
+                        "sku": "SKU-001"
+                    }
+                }
+            ],
+            "debug_trace": {
+                "trace_id": "uuid-2",
+                "stage": "execution",
+                "router_decision": "product_info",
+                "resolver": {
+                    "query": "SKU-001",
+                    "candidates_count": 1
+                },
+                "pending_intent_before": {
+                    "type": "product_info",
+                    "original_text": "ขอข้อมูลสินค้า"
+                },
+                "pending_intent_after": null
+            }
+        }
+    },
+    {
+        "id": "trace_003_ambiguous_search",
+        "request": {
+            "content": "new product"
+        },
+        "response": {
+            "assistant_message": {
+                "role": "assistant",
+                "content": "พบสินค้าหลายรายการ โปรดเลือกสินค้าที่ต้องการครับ:"
+            },
+            "ui_events": [
+                {
+                    "type": "choose_product",
+                    "payload": {
+                        "candidates": [
+                            {
+                                "sku": "NP-01",
+                                "name": "New Product 1",
+                                "score": 80
+                            },
+                            {
+                                "sku": "NP-02",
+                                "name": "New Product 2",
+                                "score": 75
+                            }
+                        ]
+                    }
+                }
+            ],
+            "debug_trace": {
+                "trace_id": "uuid-3",
+                "stage": "execution",
+                "router_decision": "choose_product",
+                "resolver": {
+                    "query": "new product",
+                    "candidates_count": 2
+                }
+            }
+        }
+    },
+    {
+        "id": "trace_004_select_product",
+        "request": {
+            "content": "เลือก NP-01",
+            "context": {
+                "currentSku": "NP-01"
+            }
+        },
+        "response": {
+            "assistant_message": {
+                "role": "assistant",
+                "content": "รับทราบครับ เลือกสินค้า NP-01 แล้ว ต้องการดูข้อมูลอะไรเพิ่มเติมไหมครับ?"
+            },
+            "updated_context": {
+                "currentSku": "NP-01"
+            },
+            "ui_events": [],
+            "debug_trace": {
+                "trace_id": "uuid-4",
+                "stage": "execution",
+                "router_decision": "selection_confirmed"
+            }
+        }
+    },
+    {
+        "id": "trace_005_tasks_direct",
+        "request": {
+            "content": "งานค้าง",
+            "context": {
+                "currentSku": "NP-01"
+            }
+        },
+        "response": {
+            "assistant_message": {
+                "role": "assistant",
+                "content": "แสดงรายการงานสำหรับ NP-01... (Coming Soon)"
+            },
+            "updated_context": {
+                "currentSku": "NP-01"
+            },
+            "ui_events": [],
+            "debug_trace": {
+                "trace_id": "uuid-5",
+                "stage": "execution",
+                "router_decision": "tasks_summary"
+            }
+        }
+    }
+]

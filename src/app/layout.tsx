@@ -21,6 +21,8 @@ export const metadata: Metadata = {
   description: "Manage product launches with Google Sheets",
 };
 
+
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -30,18 +32,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={cn(inter.variable, ibmPlexThai.variable, "min-h-screen bg-background font-sans antialiased text-foreground")}>
         <Providers>
-          <div className="flex min-h-screen bg-background">
-            <Sidebar />
-
-            <div className="flex-1 flex flex-col min-w-0">
-              {/* Navbar will become TopHeader inside pages or kept here if global */}
-              <Navbar />
-              <main className="flex-1 p-6 overflow-y-auto w-full max-w-7xl mx-auto">
-                {children}
-              </main>
-            </div>
-
-          </div>
+          {children}
         </Providers>
       </body>
     </html>

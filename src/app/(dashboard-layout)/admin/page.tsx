@@ -7,6 +7,8 @@ import { authOptions } from "@/lib/google/auth"
 import { requireAdmin } from "@/lib/db/permissions"
 import { redirect } from "next/navigation"
 
+import { OrphanTasksReport } from "@/components/admin/OrphanTasksReport"
+
 export default async function AdminPage() {
     const session = await getServerSession(authOptions)
     if (!session) {
@@ -26,12 +28,16 @@ export default async function AdminPage() {
                 <TabsList>
                     <TabsTrigger value="users">User Management</TabsTrigger>
                     <TabsTrigger value="database">Database</TabsTrigger>
+                    <TabsTrigger value="reports">Reports</TabsTrigger>
                 </TabsList>
                 <TabsContent value="users" className="mt-4">
                     <UsersTable users={users} />
                 </TabsContent>
                 <TabsContent value="database" className="mt-4">
                     <DatabaseManagementSection />
+                </TabsContent>
+                <TabsContent value="reports" className="mt-4">
+                    <OrphanTasksReport />
                 </TabsContent>
             </Tabs>
         </div>

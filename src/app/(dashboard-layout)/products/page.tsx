@@ -20,7 +20,6 @@ export default async function ProductsPage() {
     // Enhance products with active task
     const productsWithActiveTask = products.map(p => {
         // Find first task that is In Progress
-        // We really should sort by something, but for now we take the first found in the list which usually follows creation order/id order.
         const activeTask = tasks.find(t => t.product_id === p.product_id && t.status === 'InProgress')
         return {
             ...p,

@@ -64,3 +64,30 @@ export async function uploadFileToDrive(fileBuffer: Buffer, fileName: string, mi
         throw error
     }
 }
+
+export async function searchDriveFiles(query: string) {
+    try {
+        const drive = await getDriveClient()
+        // If we want to restrict search to a specific folder:
+        // const folderId = await getDriveFolderId()
+
+        // Construct query: name contains 'query' AND not trashed
+        let q = `name contains '${query}' and trashed = false`
+
+        // Optional: restrict to specific folder if folderId is available
+        // if (folderId) {
+        //    q += ` and '${folderId}' in parents`
+        // }
+
+        const res = await drive.files.list({
+            q,
+            fields: 'files(id, name, webViewLink, mimeType)',
+            pageSize: 5
+        })
+
+        return res.data.files || []
+    } catch (error) {
+        console.error("Error searching Drive files:", error)
+        return []
+    }
+}

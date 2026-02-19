@@ -1,0 +1,8 @@
+{
+    "crons": [
+        {
+            "path": "/api/integrations/zortout/sync",
+            "schedule": "0 0 * * *"
+        }
+    ]
+}

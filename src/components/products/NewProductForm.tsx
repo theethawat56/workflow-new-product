@@ -92,7 +92,7 @@ export function NewProductForm({ users, roleDefaults }: Props) {
                 category: data.category,
                 sub_category: data.sub_category,
                 launch_month: data.launch_month,
-                go_live_date: data.go_live_date,
+                go_live_date: `'${data.go_live_date}`, // Force string format
                 sales_channel: data.sales_channel,
                 cost: data.cost,
                 price: data.price,

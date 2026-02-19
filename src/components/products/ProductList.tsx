@@ -9,6 +9,10 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { updateProductStatusAction } from "@/app/actions/product"
 import { cn } from "@/lib/utils"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Loader2, Rocket, RotateCcw } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 interface Product {
     product_id: string
@@ -19,14 +23,113 @@ interface Product {
     go_live_date: string
     sales_channel: string
     status: string
-    active_task?: string // Added
-    active_task_due_date?: string // Added
+    active_task?: string
+    active_task_due_date?: string
 }
 
-export function ProductList({ initialProducts }: { initialProducts: Product[] }) {
+interface ProductListProps {
+    initialProducts: Product[]
+    isLaunchedView?: boolean
+}
+
+export function ProductList({ initialProducts, isLaunchedView = false }: ProductListProps) {
+    const router = useRouter()
     const [search, setSearch] = useState("")
     const [statusFilter, setStatusFilter] = useState("ALL")
     const [channelFilter, setChannelFilter] = useState("ALL")
+    const [launchFilter, setLaunchFilter] = useState("ALL") // ALL | NEW | CATALOG
+
+    const currentYear = new Date().getFullYear()
+
+    // Launch Modal State
+    const [launchOpen, setLaunchOpen] = useState(false)
+    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+    const [zortSku, setZortSku] = useState("")
+    const [isLaunching, setIsLaunching] = useState(false)
+
+    // Unlaunch State
+    const [unlaunchOpen, setUnlaunchOpen] = useState(false)
+    const [isUnlaunching, setIsUnlaunching] = useState(false)
+    const [unlaunchTarget, setUnlaunchTarget] = useState<Product | null>(null)
+
+    const handleLaunchClick = (product: Product) => {
+        setSelectedProduct(product)
+        setZortSku(product.sku_code) // Default to internal SKU
+        setLaunchOpen(true)
+    }
+
+    const onUnlaunchClick = (product: Product) => {
+        setUnlaunchTarget(product)
+        setUnlaunchOpen(true)
+    }
+
+    const confirmUnlaunch = async () => {
+        if (!unlaunchTarget) return
+
+        setIsUnlaunching(true)
+        try {
+            const res = await fetch("/api/products/unlaunch", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    product_id: unlaunchTarget.product_id,
+                    sku_code: unlaunchTarget.sku_code,
+                    product_name: unlaunchTarget.product_name
+                })
+            })
+
+            if (!res.ok) {
+                const err = await res.json()
+                alert(err.error || "Un-launch failed")
+                return
+            }
+
+            setUnlaunchOpen(false)
+            router.refresh()
+        } catch (error) {
+            console.error(error)
+            alert("An error occurred")
+        } finally {
+            setIsUnlaunching(false)
+        }
+    }
+
+    const confirmLaunch = async () => {
+        if (!selectedProduct || !zortSku) return
+
+        setIsLaunching(true)
+        try {
+            // 1. Call Launch API
+            const res = await fetch("/api/products/launch", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    product_id: selectedProduct.product_id,
+                    zort_sku: zortSku,
+                    product_name: selectedProduct.product_name
+                })
+            })
+
+            if (!res.ok) {
+                const err = await res.json()
+                alert(err.error || "Launch failed")
+                return
+            }
+
+            // 2. Update status to Launched
+            await updateProductStatusAction(selectedProduct.product_id, "Launched")
+
+            setLaunchOpen(false)
+            alert("Product Launched Successfully!")
+            router.push("/products/on-sale")
+            router.refresh()
+        } catch (error) {
+            console.error(error)
+            alert("An error occurred")
+        } finally {
+            setIsLaunching(false)
+        }
+    }
 
     const filtered = useMemo(() => {
         return initialProducts.filter(p => {
@@ -37,24 +140,70 @@ export function ProductList({ initialProducts }: { initialProducts: Product[] })
             const matchesStatus = statusFilter === "ALL" || p.status === statusFilter
             const matchesChannel = channelFilter === "ALL" || p.sales_channel === channelFilter
 
-            return matchesSearch && matchesStatus && matchesChannel
+            // Launch Year Logic
+            let matchesLaunch = true
+            if (isLaunchedView && launchFilter !== "ALL") {
+                const launchDate = p.go_live_date ? new Date(p.go_live_date) : null
+                const launchYear = launchDate ? launchDate.getFullYear() : null
+
+                if (launchFilter === "NEW") {
+                    // New = Launched in current year
+                    matchesLaunch = launchYear === currentYear
+                } else if (launchFilter === "CATALOG") {
+                    // Catalog = Launched before current year or no date
+                    matchesLaunch = launchYear !== currentYear
+                }
+            }
+
+            return matchesSearch && matchesStatus && matchesChannel && matchesLaunch
         })
-    }, [initialProducts, search, statusFilter, channelFilter])
+    }, [initialProducts, search, statusFilter, channelFilter, launchFilter, isLaunchedView, currentYear])
 
     // Get unique channels for filter
     const channels = Array.from(new Set(initialProducts.map(p => p.sales_channel).filter(Boolean)))
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex flex-col md:flex-row gap-4 items-center flex-wrap">
                 <Input
                     placeholder="Search SKU or Name..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="max-w-sm"
+                    className="max-w-[200px]"
                 />
+
+                {/* Launch Filter (Only on On-Sale Page) */}
+                {isLaunchedView && (
+                    <div className="flex items-center space-x-1 border rounded-md p-1 bg-muted/20">
+                        <Button
+                            variant={launchFilter === "ALL" ? "secondary" : "ghost"}
+                            size="sm"
+                            onClick={() => setLaunchFilter("ALL")}
+                            className="h-7 text-xs"
+                        >
+                            All
+                        </Button>
+                        <Button
+                            variant={launchFilter === "NEW" ? "secondary" : "ghost"}
+                            size="sm"
+                            onClick={() => setLaunchFilter("NEW")}
+                            className="h-7 text-xs text-green-700"
+                        >
+                            New ({currentYear})
+                        </Button>
+                        <Button
+                            variant={launchFilter === "CATALOG" ? "secondary" : "ghost"}
+                            size="sm"
+                            onClick={() => setLaunchFilter("CATALOG")}
+                            className="h-7 text-xs text-muted-foreground"
+                        >
+                            Catalog
+                        </Button>
+                    </div>
+                )}
+
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-[180px]">
+                    <SelectTrigger className="w-[140px]">
                         <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -65,11 +214,8 @@ export function ProductList({ initialProducts }: { initialProducts: Product[] })
                         <SelectItem value="Hold">Hold</SelectItem>
                     </SelectContent>
                 </Select>
-                {/* Keep Channel Filter or remove? Keeping for utility even if column hidden? */}
-                {/* User asked to "change product page on column", implying REPLACEMENT. */}
-                {/* But filter might still be useful. Let's keep it. */}
                 <Select value={channelFilter} onValueChange={setChannelFilter}>
-                    <SelectTrigger className="w-[180px]">
+                    <SelectTrigger className="w-[140px]">
                         <SelectValue placeholder="Channel" />
                     </SelectTrigger>
                     <SelectContent>
@@ -89,7 +235,7 @@ export function ProductList({ initialProducts }: { initialProducts: Product[] })
                             <TableHead>SKU</TableHead>
                             <TableHead>Name</TableHead>
                             <TableHead>Category</TableHead>
-                            <TableHead>Launch Month</TableHead>
+                            <TableHead>Launch Date</TableHead>
                             <TableHead>Active Task</TableHead>
                             <TableHead>Due Date</TableHead>
                             <TableHead>Status</TableHead>
@@ -104,57 +250,163 @@ export function ProductList({ initialProducts }: { initialProducts: Product[] })
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            filtered.map(product => (
-                                <TableRow key={product.product_id}>
-                                    <TableCell className="font-medium">{product.sku_code}</TableCell>
-                                    <TableCell>{product.product_name}</TableCell>
-                                    <TableCell>{product.category}</TableCell>
-                                    <TableCell>{product.launch_month}</TableCell>
-                                    <TableCell>
-                                        {/* Show Active Task */}
-                                        {product.active_task && product.active_task !== '-' ? (
-                                            <Badge variant="secondary" className="font-normal">
-                                                {product.active_task}
+                            filtered.map(product => {
+                                const launchDate = product.go_live_date ? new Date(product.go_live_date) : null
+                                const launchYear = launchDate ? launchDate.getFullYear() : null
+                                const isNew = launchYear === currentYear
+
+                                return (
+                                    <TableRow key={product.product_id}>
+                                        <TableCell className="font-medium">
+                                            {product.sku_code}
+                                            {isNew && isLaunchedView && (
+                                                <Badge variant="outline" className="ml-2 py-0 h-5 text-[10px] bg-green-50 text-green-700 border-green-200">
+                                                    NEW {launchYear}
+                                                </Badge>
+                                            )}
+                                        </TableCell>
+                                        <TableCell>{product.product_name}</TableCell>
+                                        <TableCell>{product.category}</TableCell>
+                                        <TableCell>
+                                            <div className="flex flex-col">
+                                                <span className="font-medium">{product.launch_month}</span>
+                                                {launchYear && launchYear !== currentYear && (
+                                                    <span className="text-xs text-muted-foreground">{launchYear}</span>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>
+                                            {product.active_task && product.active_task !== '-' ? (
+                                                <Badge variant="secondary" className="font-normal">
+                                                    {product.active_task}
+                                                </Badge>
+                                            ) : (
+                                                <span className="text-muted-foreground">-</span>
+                                            )}
+                                        </TableCell>
+                                        <TableCell>{product.active_task_due_date || '-'}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={
+                                                product.status === 'Launched' ? 'default' :
+                                                    product.status === 'Active' ? 'secondary' : 'outline'
+                                            }>
+                                                {product.status}
                                             </Badge>
-                                        ) : (
-                                            <span className="text-muted-foreground">-</span>
-                                        )}
-                                    </TableCell>
-                                    <TableCell>{product.active_task_due_date || '-'}</TableCell>
-                                    <TableCell>
-                                        <Select
-                                            defaultValue={product.status}
-                                            onValueChange={async (val) => {
-                                                const res = await updateProductStatusAction(product.product_id, val)
-                                                if (!res.success) alert("Failed to update status")
-                                            }}
-                                        >
-                                            <SelectTrigger className={cn("w-[110px] h-8 text-xs",
-                                                product.status === 'Active' ? "bg-primary text-primary-foreground hover:bg-primary/90" :
-                                                    product.status === 'Launched' ? "bg-secondary text-secondary-foreground hover:bg-secondary/80" :
-                                                        "border-dashed"
-                                            )}>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="Draft">Draft</SelectItem>
-                                                <SelectItem value="Active">Active</SelectItem>
-                                                <SelectItem value="Launched">Launched</SelectItem>
-                                                <SelectItem value="Hold">Hold</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <Button variant="ghost" size="sm" asChild>
-                                            <Link href={`/products/${product.product_id}`}>View</Link>
-                                        </Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))
+                                        </TableCell>
+                                        <TableCell className="text-right space-x-2">
+                                            {/* Launch Button (Only for Pipeline View) */}
+                                            {!isLaunchedView && product.status !== 'Launched' && (
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-8 gap-1 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                    onClick={() => handleLaunchClick(product)}
+                                                >
+                                                    <Rocket className="h-3 w-3" />
+                                                    Launch
+                                                </Button>
+                                            )}
+
+                                            {/* Un-Launch Button (Only for Launched View) */}
+                                            {isLaunchedView && product.status === 'Launched' && (
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-8 gap-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                    onClick={() => onUnlaunchClick(product)}
+                                                    disabled={isUnlaunching && unlaunchTarget?.product_id === product.product_id}
+                                                >
+                                                    {isUnlaunching && unlaunchTarget?.product_id === product.product_id ? (
+                                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                                    ) : (
+                                                        <RotateCcw className="h-3 w-3" />
+                                                    )}
+                                                    Undo
+                                                </Button>
+                                            )}
+
+                                            <Button variant="ghost" size="sm" asChild>
+                                                <Link href={`/products/${product.product_id}`}>View</Link>
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                )
+                            })
                         )}
                     </TableBody>
                 </Table>
             </div>
+
+            {/* Launch Dialog */}
+            <Dialog open={launchOpen} onOpenChange={setLaunchOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Launch Product</DialogTitle>
+                        <DialogDescription>
+                            Enter the Zortout SKU for reporting tracking.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="name" className="text-right">
+                                Product
+                            </Label>
+                            <Input
+                                id="name"
+                                value={selectedProduct?.product_name || ''}
+                                disabled
+                                className="col-span-3"
+                            />
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="zortSku" className="text-right">
+                                Zort SKU
+                            </Label>
+                            <Input
+                                id="zortSku"
+                                value={zortSku}
+                                onChange={(e) => setZortSku(e.target.value)}
+                                className="col-span-3"
+                                placeholder="e.g. ATB-001"
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setLaunchOpen(false)}>Cancel</Button>
+                        <Button onClick={confirmLaunch} disabled={!zortSku || isLaunching}>
+                            {isLaunching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Confirm Launch
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Unlaunch Confirm Dialog */}
+            <Dialog open={unlaunchOpen} onOpenChange={setUnlaunchOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Undo Launch</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to un-launch this product?
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-2">
+                        <p className="text-sm text-muted-foreground">
+                            This will remove <strong>{unlaunchTarget?.product_name}</strong> from the "Products on Sale" list and stop tracking its sales in the New Product dashboard.
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-2">
+                            The product will return to the <strong>New Products</strong> pipeline with an <strong>Active</strong> status.
+                        </p>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setUnlaunchOpen(false)} disabled={isUnlaunching}>Cancel</Button>
+                        <Button onClick={confirmUnlaunch} variant="destructive" disabled={isUnlaunching}>
+                            {isUnlaunching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Confirm Undo
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }

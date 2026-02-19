@@ -95,6 +95,87 @@ export const SHEETS_CONFIG = {
             "timestamp",
         ],
     },
+    sale_order_items: {
+        name: "sale_order_items",
+        headers: [
+            "order_id",
+            "order_number",
+            "order_date",
+            "sales_channel",
+            "sku",
+            "product_name",
+            "market_place_name",
+            "quantity",
+            "price_per_unit",
+            "total_amount",
+            "customer_name",
+            "status",
+            "payment_status",
+        ],
+    },
+    launched_products: {
+        name: "launched_products",
+        headers: [
+            "zort_sku",
+            "launch_date",
+            "product_name",
+            "status", // Active, Inactive
+            "launch_type" // NEW_LAUNCH, EXISTING_ADDITION
+        ]
+    },
+    target_plan: {
+        name: "target_plan",
+        headers: [
+            "sku",
+            "launch_month_plan",
+            "expected_units_m1",
+            "expected_units_m2",
+            "expected_gp_m1",
+            "invest_total",
+            "price_plan",
+            "gp_per_unit_plan"
+        ]
+    },
+    kol: {
+        name: "KOL",
+        headers: [
+            "PIC",
+            "Post Date",
+            "D", "M", "Y",
+            "Count unique",
+            "KOL Name",
+            "Product Name",
+            "SKU",
+            "Channel",
+            "Budget type",
+            "Budget amount",
+            "Budget product",
+            "Budget Final",
+            "KOL Type",
+            "Asset Link (drive)",
+            "Code",
+            "Link",
+            "Follower",
+            "Viewed",
+            "Saved",
+            "Liked",
+            "Shared",
+            "Status",
+            "View >1m",
+            "taskNumber"
+        ]
+    },
+    sales_all: {
+        name: "Sale_All",
+        headers: [
+            "Date",
+            "SKU",
+            "Product Name",
+            "Units Sold",
+            "Revenue",
+            "Avg Selling Price"
+        ]
+    }
 } as const
 
 export type SheetName = keyof typeof SHEETS_CONFIG
@@ -143,4 +224,4 @@ export type TaskStatus =
     | "Approved"
     | "Done"
 
-export type ProductStatus = "Draft" | "Active" | "Hold" | "Launched"
+export type ProductStatus = "Draft" | "Active" | "Hold" | "Launched" | "Existing"

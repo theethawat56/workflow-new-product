@@ -16,6 +16,8 @@ import { AdminButtons } from "@/components/products/AdminButtons"
 import { FinancialCards, CostPriceCard } from "@/components/products/FinancialCards"
 import { ProductMetrics } from "@/components/products/ProductMetrics"
 
+import { ProductSpecifics } from "@/components/products/ProductSpecifics"
+
 interface Props {
     product: any
     tasks: any[]
@@ -27,8 +29,7 @@ export function ProductDetailView({ product, tasks, attachments }: Props) {
     const [isDeleting, setIsDeleting] = useState(false)
 
     const handleDelete = async () => {
-        if (!confirm("Are you sure you want to delete this product? This action cannot be undone.")) return
-
+        // Confirmation now handled in AdminButtons Dialog
         setIsDeleting(true)
         const res = await deleteProductAction(product.product_id)
         if (res.success) {
@@ -102,26 +103,8 @@ export function ProductDetailView({ product, tasks, attachments }: Props) {
                     {/* Cost/Price Details Hidden for CS/AfterService */}
                     <CostPriceCard product={product} />
 
-                    {/* Product Specific Details from Checklist */}
-                    <Card className="mt-6">
-                        <CardHeader>
-                            <CardTitle>Product Specifics</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            {tasks.filter(t => t.phase === 'Product Detail' || t.task_code.startsWith('DET')).length > 0 ? (
-                                <div className="grid gap-4 md:grid-cols-2">
-                                    {tasks.filter(t => t.phase === 'Product Detail' || t.task_code.startsWith('DET')).map(t => (
-                                        <div key={t.product_task_id} className="border p-3 rounded-md">
-                                            <div className="font-semibold text-sm text-muted-foreground">{t.task_name}</div>
-                                            <div className="mt-1 whitespace-pre-wrap font-medium">{t.notes || <span className="text-muted-foreground font-normal italic">Pending input...</span>}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <p className="text-muted-foreground">No product details defined yet.</p>
-                            )}
-                        </CardContent>
-                    </Card>
+                    {/* Product Specific Details */}
+                    <ProductSpecifics productId={product.product_id} tasks={tasks} />
                 </TabsContent>
 
                 <TabsContent value="metrics">

@@ -7,9 +7,12 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/google/auth"
+import { logActivity } from "@/lib/logger"
 
 export async function createProductAction(productData: ProductFormValues, roleData: RoleAssignmentValues) {
     try {
+        const session = await getServerSession(authOptions)
+        const actorEmail = session?.user?.email || "system"
         const productId = `PRD-${uuidv4().substring(0, 8).toUpperCase()}`
         const now = new Date().toISOString()
 
@@ -23,8 +26,7 @@ export async function createProductAction(productData: ProductFormValues, roleDa
             ? productData.sales_channel.join(", ")
             : productData.sales_channel
 
-        // Create dependent promises for Parallel Execution
-        const createProductPromise = create("products", {
+        const productRow = {
             product_id: productId,
             sku_code: productData.sku_code,
             product_name: productData.product_name,
@@ -40,7 +42,10 @@ export async function createProductAction(productData: ProductFormValues, roleDa
             created_at: now,
             updated_at: now,
             created_by: "system",
-        })
+        }
+
+        // Create dependent promises for Parallel Execution
+        const createProductPromise = create("products", productRow)
 
         const roleAssignments = roleData.assignments
             .filter(a => a.owner_email)
@@ -65,6 +70,8 @@ export async function createProductAction(productData: ProductFormValues, roleDa
             createRolesPromise,
             fetchTemplatesPromise
         ])
+
+        await logActivity("product", productId, "create", actorEmail, null, productRow)
 
         console.log("DEBUG: Template Tasks Fetched:", Array.isArray(templateTasks) ? templateTasks.length : "Not Array")
 
@@ -165,46 +172,13 @@ export async function updateProductAction(productId: string, data: Partial<Produ
         }
 
         await update("products", "product_id", productId, updateData)
+        await logActivity("product", productId, "update", actorEmail, currentProduct, { ...currentProduct, ...updateData })
 
         // 3. Recalculate Tasks if Date Changed
         if (dateChanged && (data.activate || currentProduct.status === "Active" || currentProduct.status === "Launched")) {
             // Calculate difference in milliseconds
             const oldDate = new Date(oldGoLive)
             const newDate = new Date(newGoLive!)
-            const diffTime = newDate.getTime() - oldDate.getTime()
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-
-            if (diffDays !== 0) {
-                // Fetch all tasks for this product
-                const allTasks = await findAll<any>("product_tasks")
-                const productTasks = allTasks.filter(t => t.product_id === productId)
-
-                for (const task of productTasks) {
-                    const oldStart = new Date(task.start_date)
-                    const oldDue = new Date(task.due_date)
-
-                    const newStart = new Date(oldStart)
-                    newStart.setDate(newStart.getDate() + diffDays)
-
-                    const newDue = new Date(oldDue)
-                    newDue.setDate(newDue.getDate() + diffDays)
-
-                    await update("product_tasks", "product_task_id", task.product_task_id, {
-                        start_date: newStart.toISOString().split('T')[0],
-                        due_date: newDue.toISOString().split('T')[0],
-                        updated_at: now
-                    })
-                }
-            }
-        }
-
-        await update("products", "product_id", productId, updateData)
-
-        // 3. Recalculate Tasks if Date Changed
-        if (dateChanged && data.activate) {
-            // Calculate difference in milliseconds
-            const oldDate = new Date(oldGoLive)
-            const newDate = new Date(newGoLive)
             const diffTime = newDate.getTime() - oldDate.getTime()
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
 
@@ -242,10 +216,19 @@ export async function updateProductAction(productId: string, data: Partial<Produ
 
 export async function deleteProductAction(productId: string) {
     try {
+        const user = await getServerSession(authOptions)
+        const actorEmail = user?.user?.email || "system"
+
+        const before = await findOne<any>("products", "product_id", productId)
         await deleteRow("products", "product_id", productId)
         // Note: Related records (roles, tasks) remain for now.
 
+        if (before) {
+            await logActivity("product", productId, "delete", actorEmail, before, null)
+        }
+
         revalidatePath("/products")
+        revalidatePath("/products/on-sale")
         return { success: true }
     } catch (error: any) {
         console.error("Delete error:", error)
@@ -255,14 +238,84 @@ export async function deleteProductAction(productId: string) {
 
 export async function updateProductStatusAction(productId: string, status: string) {
     try {
+        const user = await getServerSession(authOptions)
+        const actorEmail = user?.user?.email || "system"
+        const now = new Date().toISOString()
+
+        const before = await findOne<any>("products", "product_id", productId)
+
         await update("products", "product_id", productId, {
             status,
-            updated_at: new Date().toISOString()
+            updated_at: now
         })
+
+        if (before) {
+            await logActivity("product", productId, "update", actorEmail, before, { ...before, status, updated_at: now })
+        }
+
         revalidatePath("/products")
         return { success: true }
     } catch (error: any) {
         console.error("Update status error:", error)
+        return { success: false, message: error.message }
+    }
+}
+
+export async function updateProductSpecificAction(productId: string, taskCode: string, content: string) {
+    try {
+        const user = await getServerSession(authOptions)
+        const actorEmail = user?.user?.email || "system"
+        const now = new Date().toISOString()
+
+        // 1. Check if task exists
+        const allTasks = await findAll<any>("product_tasks")
+        const existingTask = allTasks.find(t => t.product_id === productId && t.task_code === taskCode)
+
+        if (existingTask) {
+            // Update existing
+            await update("product_tasks", "product_task_id", existingTask.product_task_id, {
+                notes: content,
+                updated_at: now
+            })
+            await logActivity("product_task", existingTask.product_task_id, "update", actorEmail, existingTask, { ...existingTask, notes: content, updated_at: now })
+        } else {
+            // Create new
+            // Look up task name from seed/constants (hardcoding for now based on request)
+            const taskMap: Record<string, string> = {
+                "DET1": "Key Feature",
+                "DET2": "Target Customer",
+                "DET3": "SpecSheet",
+                "DET4": "In-Box items",
+                "DET5": "Box Dimension"
+            }
+
+            const newTaskId = `PT-${uuidv4().substring(0, 8)}`
+            const newNode = {
+                product_task_id: newTaskId,
+                product_id: productId,
+                task_code: taskCode,
+                task_name: taskMap[taskCode] || "Product Detail",
+                phase: "Product Detail",
+                owner_role: "PM",
+                owner_email: actorEmail || "",
+                start_date: now.split('T')[0],
+                due_date: now.split('T')[0],
+                status: "NotStarted",
+                priority: "P1",
+                blocker_reason: "",
+                notes: content,
+                updated_at: now,
+                input_type: "note"
+            }
+
+            await create("product_tasks", newNode)
+            await logActivity("product_task", newTaskId, "create", actorEmail, null, newNode)
+        }
+
+        revalidatePath(`/products/${productId}`)
+        return { success: true }
+    } catch (error: any) {
+        console.error("Update specific error:", error)
         return { success: false, message: error.message }
     }
 }

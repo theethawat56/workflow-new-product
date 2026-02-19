@@ -4,7 +4,8 @@ import { SHEETS_CONFIG, SheetName } from "./schema"
 export async function findAll<T>(sheetName: SheetName): Promise<T[]> {
     const sheets = await getSheetsClient()
     const spreadsheetId = await getSpreadsheetId()
-    const range = `${sheetName}!A:Z` // Read all data
+    const realSheetName = SHEETS_CONFIG[sheetName].name
+    const range = `${realSheetName}!A:Z` // Read all data
 
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId,
@@ -36,12 +37,13 @@ export async function create<T>(sheetName: SheetName, data: T) {
     const sheets = await getSheetsClient()
     const spreadsheetId = await getSpreadsheetId()
     const config = SHEETS_CONFIG[sheetName]
+    const realSheetName = config.name
 
     const row = config.headers.map((header) => (data as any)[header] ?? "")
 
     await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `${sheetName}!A1`,
+        range: `${realSheetName}!A1`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
             values: [row],
@@ -55,6 +57,7 @@ export async function createMany<T>(sheetName: SheetName, data: T[]) {
     const sheets = await getSheetsClient()
     const spreadsheetId = await getSpreadsheetId()
     const config = SHEETS_CONFIG[sheetName]
+    const realSheetName = config.name
 
     const rows = data.map(item =>
         config.headers.map((header) => (item as any)[header] ?? "")
@@ -62,7 +65,7 @@ export async function createMany<T>(sheetName: SheetName, data: T[]) {
 
     await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `${sheetName}!A1`,
+        range: `${realSheetName}!A1`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
             values: rows,
@@ -79,6 +82,7 @@ export async function update<T>(
     const sheets = await getSheetsClient()
     const spreadsheetId = await getSpreadsheetId()
     const config = SHEETS_CONFIG[sheetName]
+    const realSheetName = config.name
 
     // First find the row index
     const allData = await findAll<any>(sheetName)
@@ -99,7 +103,7 @@ export async function update<T>(
 
     await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${sheetName}!A${sheetRowNumber}`,
+        range: `${realSheetName}!A${sheetRowNumber}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
             values: [rowValues],
@@ -115,6 +119,7 @@ export async function deleteRow(
     const sheets = await getSheetsClient()
     const spreadsheetId = await getSpreadsheetId()
     const config = SHEETS_CONFIG[sheetName]
+    const realSheetName = config.name
 
     // Find row index
     const allData = await findAll<any>(sheetName)
@@ -126,19 +131,13 @@ export async function deleteRow(
 
     // Row number 1-based. Header is 1. Data starts at 2.
     // rowIndex 0 is row 2.
-    // sheets API uses 0-based index for deleteDimension.
-    // Row 1 is index 0. Row 2 is index 1.
-    // So if rowIndex is 0 (first data row), it corresponds to Sheet Row 2, which is Index 1.
     const sheetIndex = rowIndex + 1
 
-    // Get Sheet ID (gid) - assume 0 for first sheet or we need to find it? 
-    // Wait, sheetName is the name. We need to find the sheetId (gid) for that name.
-
     const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId })
-    const sheet = spreadsheet.data.sheets?.find(s => s.properties?.title === sheetName)
+    const sheet = spreadsheet.data.sheets?.find(s => s.properties?.title === realSheetName)
 
     if (!sheet || typeof sheet.properties?.sheetId !== 'number') {
-        throw new Error(`Sheet ${sheetName} not found or invalid`)
+        throw new Error(`Sheet ${realSheetName} not found or invalid`)
     }
     const sheetId = sheet.properties.sheetId
 

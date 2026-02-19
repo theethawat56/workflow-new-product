@@ -1,0 +1,124 @@
+[
+    {
+        "id": "trace_1",
+        "description": "Missing SKU -> Pending Intent Set",
+        "input": "ขอข้อมูลสินค้า",
+        "intent": "product_info",
+        "sku": null,
+        "pending_intent_after": {
+            "type": "product_info",
+            "original_text": "ขอข้อมูลสินค้า"
+        },
+        "full_response": {
+            "assistant_message": {
+                "content": "ต้องการดูข้อมูลของ SKU ไหนครับ? รบกวนระบุ SKU หรือเลือกจากรายการด้านซ้ายได้เลยครับ"
+            },
+            "updated_context": {
+                "pending_intent": {
+                    "type": "product_info",
+                    "original_text": "ขอข้อมูลสินค้า"
+                }
+            }
+        }
+    },
+    {
+        "id": "trace_2",
+        "description": "SKU Provided -> Intent Replay -> Cleared",
+        "input": "TEST001",
+        "intent": "product_info",
+        "sku": "TEST001",
+        "pending_intent_before": {
+            "type": "product_info",
+            "original_text": "ขอข้อมูลสินค้า"
+        },
+        "pending_intent_after": null,
+        "full_response": {
+            "assistant_message": {
+                "content": "ข้อมูลสินค้า **Test Product** (TEST001):\nSTATUS: Active..."
+            },
+            "updated_context": {
+                "currentSku": "TEST001",
+                "pending_intent": null
+            },
+            "ui_events": [
+                {
+                    "type": "set_url_sku",
+                    "payload": {
+                        "sku": "TEST001"
+                    }
+                }
+            ]
+        }
+    },
+    {
+        "id": "trace_3",
+        "description": "Ambiguous Product -> UI Event",
+        "input": "ambiguous",
+        "intent": "choose_product",
+        "sku": null,
+        "full_response": {
+            "assistant_message": {
+                "content": "พบสินค้าหลายรายการ โปรดเลือกสินค้าที่ต้องการครับ:"
+            },
+            "ui_events": [
+                {
+                    "type": "choose_product",
+                    "payload": {
+                        "candidates": [
+                            {
+                                "sku": "A1",
+                                "name": "Ambiguous 1",
+                                "score": 80
+                            },
+                            {
+                                "sku": "A2",
+                                "name": "Ambiguous 2",
+                                "score": 80
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    },
+    {
+        "id": "trace_4",
+        "description": "Checklist Creation -> Confirmation",
+        "input": "create checklist",
+        "intent": "create_checklist",
+        "sku": "TEST001",
+        "full_response": {
+            "assistant_message": {
+                "content": "เตรียมสร้าง Checklist \"New Product Launch\" สำหรับ Test Product (TEST001) จำนวน 1 งานครับ..."
+            },
+            "ui_events": [
+                {
+                    "type": "show_confirmation",
+                    "payload": {
+                        "title": "Create New Product Launch",
+                        "message": "Are you sure you want to create 1 tasks for TEST001?",
+                        "action_id": "create_checklist_TEST001_123456789",
+                        "data": {
+                            "sku": "TEST001",
+                            "productId": "p1",
+                            "type": "create_checklist",
+                            "tasks": []
+                        }
+                    }
+                }
+            ]
+        }
+    },
+    {
+        "id": "trace_5",
+        "description": "Execution Success",
+        "input": "EXECUTE_ACTION {...}",
+        "intent": "execute_action",
+        "sku": "TEST001",
+        "full_response": {
+            "assistant_message": {
+                "content": "Created 5 tasks for TEST001"
+            }
+        }
+    }
+]

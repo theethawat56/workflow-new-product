@@ -7,27 +7,68 @@ import {
     LayoutDashboard,
     Package,
     Users,
-    LogOut
+    LogOut,
+    Rocket,
+    Info,
+    MessageSquare,
+    BarChart,
+    BarChart2,
+    ListTodo,
+    FileText,
+    Disc,
+    DollarSign
 } from "lucide-react"
 import { useSession, signOut } from "next-auth/react"
 
-export function Sidebar() {
+interface SidebarProps {
+    className?: string
+    onItemClick?: () => void
+}
+
+export function Sidebar({ className, onItemClick }: SidebarProps) {
     const pathname = usePathname()
     const { data: session } = useSession()
 
-    const allLinks = [
+    // Original Global Links
+    const globalLinks = [
         { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-        { href: "/products", label: "Products", icon: Package },
+        { href: "/workspace", label: "Workspace", icon: MessageSquare },
+        { href: "/dashboard/kol-sales", label: "KOL Attribution", icon: BarChart2, exact: true },
+        { href: "/dashboard/target", label: "Target (2026)", icon: Disc },
+        { href: "/dashboard/sales", label: "Sales", icon: DollarSign },
+        { href: "/dashboard/launch", label: "Launch Control", icon: Rocket },
+        { href: "/products/pipeline", label: "New Products", icon: Package },
+        { href: "/products/on-sale", label: "Products on Sale", icon: Package },
+        { href: "/about", label: "System Overview", icon: Info },
         { href: "/admin", label: "Admin", icon: Users, requiredRole: "Admin" },
     ]
 
-    const links = allLinks.filter(link => {
+    // Workspace Specific Links
+    const workspaceLinks = [
+        { href: "/workspace", label: "Overview", icon: LayoutDashboard },
+        { href: "/workspace/products", label: "Products", icon: Package },
+        { href: "/workspace/tasks", label: "Tasks", icon: ListTodo },
+        { href: "/workspace/assistant", label: "Assistant", icon: MessageSquare },
+        { href: "/workspace/files", label: "Files", icon: FileText },
+        { href: "/dashboard", label: "Main Dashboard", icon: BarChart }, // Back to main
+        { href: "/settings", label: "Settings", icon: Users },
+    ]
+
+    const isWorkspaceParams = pathname?.startsWith("/workspace")
+    const linksToUse = isWorkspaceParams ? workspaceLinks : globalLinks
+
+    const links = linksToUse.filter(link => {
+        // @ts-ignore
         if (!link.requiredRole) return true
+        // @ts-ignore
         return session?.user?.role === link.requiredRole
     })
 
+    // Use passed className or default
+    const sidebarClass = cn("bg-sidebar border-r border-border min-h-screen hidden md:flex flex-col", className)
+
     return (
-        <aside className="w-64 bg-sidebar border-r border-border min-h-screen hidden md:flex flex-col">
+        <aside className={sidebarClass}>
             <div className="h-16 flex items-center px-6 border-b border-border/50">
                 <span className="text-xl font-medium tracking-tight text-foreground">
                     LaunchFlow
@@ -37,12 +78,17 @@ export function Sidebar() {
             <div className="flex-1 py-6 px-4 space-y-1">
                 {links.map((link) => {
                     const Icon = link.icon
-                    const isActive = pathname.startsWith(link.href)
+                    // Active logic: In workspace, strict match for overview, else prefix.
+                    // In global, similar logic.
+                    const isActive = link.href === "/workspace"
+                        ? pathname === "/workspace"
+                        : pathname.startsWith(link.href)
 
                     return (
                         <Link
                             key={link.href}
                             href={link.href}
+                            onClick={onItemClick}
                             className={cn(
                                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
                                 isActive
