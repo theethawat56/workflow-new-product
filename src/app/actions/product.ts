@@ -42,6 +42,8 @@ export async function createProductAction(productData: ProductFormValues, roleDa
             created_at: now,
             updated_at: now,
             created_by: "system",
+            fair_detail: productData.fair_detail || "",
+            date_of_fair: productData.date_of_fair || "",
         }
 
         // Create dependent promises for Parallel Execution
@@ -163,7 +165,9 @@ export async function updateProductAction(productId: string, data: Partial<Produ
             cost: data.cost,
             price: data.price,
             gp_pct: gpPct,
-            updated_at: now
+            updated_at: now,
+            fair_detail: data.fair_detail,
+            date_of_fair: data.date_of_fair
         }
 
         // Only update status if activate is explicitly passed
