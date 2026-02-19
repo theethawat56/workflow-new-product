@@ -8,8 +8,8 @@ export const dynamic = 'force-dynamic'
 export default async function OnSaleProductsPage() {
     const products = await findAll<any>("products" as SheetName)
 
-    // Filter for launched products
-    const launchedProducts = products.filter((p: any) => p.status === "Launched")
+    // Filter for launched products AND existing products
+    const launchedProducts = products.filter((p: any) => p.status === "Launched" || p.status === "Existing")
 
     return (
         <div className="flex flex-col gap-6 max-w-7xl mx-auto py-8 px-4 text-foreground">

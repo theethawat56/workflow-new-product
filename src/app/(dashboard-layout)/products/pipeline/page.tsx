@@ -11,16 +11,16 @@ export const dynamic = 'force-dynamic'
 export default async function PipelineProductsPage() {
     const products = await findAll<any>("products" as SheetName)
 
-    // Filter for non-launched products (Draft, Active, Hold)
-    const pipelineProducts = products.filter((p: any) => p.status !== "Launched")
+    // Filter for non-launched products (Draft, Active, Hold), exclude Existing
+    const pipelineProducts = products.filter((p: any) => p.status !== "Launched" && p.status !== "Existing")
 
     // --- KPI Calculations (Based on ALL products) ---
     const now = new Date()
     const currentMonth = now.getMonth()
     const currentYear = now.getFullYear()
 
-    // 1. Not Launched: Status is NOT 'Launched'
-    const notLaunchedCount = products.filter(p => p.status !== 'Launched').length
+    // 1. Not Launched: Status is NOT 'Launched' and NOT 'Existing'
+    const notLaunchedCount = products.filter(p => p.status !== 'Launched' && p.status !== 'Existing').length
 
     // 2. Launch Yearly: Status 'Launched' AND go_live_date is in current year
     const yearlyLaunchCount = products.filter(p => {
