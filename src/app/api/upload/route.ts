@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getDriveClient } from "@/lib/google/drive"
-import { Readable } from "stream"
+
+// Force Node.js runtime — required for googleapis (uses streams, crypto, etc.)
+export const runtime = "nodejs"
 
 const MAX_SIZES: Record<string, number> = {
-    product: 10 * 1024 * 1024,  // 10 MB
-    contact: 5 * 1024 * 1024,   // 5 MB
+    product: 10 * 1024 * 1024, // 10 MB
+    contact: 5 * 1024 * 1024,  // 5 MB
 }
 
-// Google Drive folder for product images
-// Uses the same folder already configured in drive.ts
 const PRODUCT_IMAGES_FOLDER_ID = "13fcUC1dRmeCBEfYaCP_vJW3bkIGWNxqg"
 
 export async function POST(req: NextRequest) {
@@ -21,29 +21,32 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "No file provided" }, { status: 400 })
         }
 
-        // Validate MIME type
         if (!file.type.startsWith("image/")) {
             return NextResponse.json({ error: "Only image files are allowed" }, { status: 400 })
         }
 
-        // Validate file size
         const maxSize = MAX_SIZES[type] ?? MAX_SIZES.product
         if (file.size > maxSize) {
             const maxMB = maxSize / (1024 * 1024)
-            return NextResponse.json({ error: `File too large. Max size: ${maxMB} MB` }, { status: 400 })
+            return NextResponse.json({ error: `File too large. Max ${maxMB} MB` }, { status: 400 })
         }
 
-        // Read file as buffer
+        // Convert to Buffer
         const bytes = await file.arrayBuffer()
         const buffer = Buffer.from(bytes)
 
-        // Generate a unique filename
+        // Build a unique filename
         const timestamp = Date.now()
         const safeName = file.name.replace(/[^a-z0-9._-]/gi, "_").toLowerCase()
         const fileName = `${type}_${timestamp}_${safeName}`
 
-        // Upload to Google Drive
+        // Upload directly to Google Drive
         const drive = await getDriveClient()
+
+        // Use a PassThrough stream from the Buffer so googleapis can stream the body
+        const { PassThrough } = await import("stream")
+        const bodyStream = new PassThrough()
+        bodyStream.end(buffer)
 
         const driveResponse = await drive.files.create({
             requestBody: {
@@ -52,18 +55,18 @@ export async function POST(req: NextRequest) {
             },
             media: {
                 mimeType: file.type,
-                body: Readable.from(buffer),
+                body: bodyStream,
             },
-            fields: "id, webViewLink",
+            fields: "id",
             supportsAllDrives: true,
         })
 
         const fileId = driveResponse.data.id
         if (!fileId) {
-            throw new Error("Drive upload did not return a file ID")
+            throw new Error("Drive upload returned no file ID")
         }
 
-        // Make the file publicly readable so <img> tags work
+        // Make file publicly readable (required for <img src="..."> to work)
         await drive.permissions.create({
             fileId,
             supportsAllDrives: true,
@@ -73,15 +76,14 @@ export async function POST(req: NextRequest) {
             },
         })
 
-        // Return a direct-embeddable image URL
-        // Google Drive direct image URL pattern: thumbnail / uc?export=view
+        // Direct embeddable URL
         const url = `https://drive.google.com/uc?export=view&id=${fileId}`
-
         return NextResponse.json({ url, fileId }, { status: 200 })
+
     } catch (error: any) {
-        console.error("[Upload API - Drive]", error)
+        console.error("[Upload API - Drive]", error?.message || error)
         return NextResponse.json(
-            { error: "Upload failed: " + (error.message || "Unknown error") },
+            { error: "Upload failed: " + (error?.message || "Unknown error") },
             { status: 500 }
         )
     }
