@@ -76,8 +76,9 @@ export async function POST(req: NextRequest) {
             },
         })
 
-        // Direct embeddable URL
-        const url = `https://drive.google.com/uc?export=view&id=${fileId}`
+        // Use thumbnail URL — reliably embeds directly in <img> tags
+        // (uc?export=view can redirect to a confirmation page for larger files)
+        const url = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`
         return NextResponse.json({ url, fileId }, { status: 200 })
 
     } catch (error: any) {
