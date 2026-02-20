@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
-import { writeFile, mkdir } from "fs/promises"
-import { join } from "path"
-import { existsSync } from "fs"
+import { getDriveClient } from "@/lib/google/drive"
+import { Readable } from "stream"
 
 const MAX_SIZES: Record<string, number> = {
     product: 10 * 1024 * 1024,  // 10 MB
     contact: 5 * 1024 * 1024,   // 5 MB
 }
+
+// Google Drive folder for product images
+// Uses the same folder already configured in drive.ts
+const PRODUCT_IMAGES_FOLDER_ID = "13fcUC1dRmeCBEfYaCP_vJW3bkIGWNxqg"
 
 export async function POST(req: NextRequest) {
     try {
@@ -30,27 +33,56 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: `File too large. Max size: ${maxMB} MB` }, { status: 400 })
         }
 
-        // Create upload directory if it doesn't exist
-        const uploadDir = join(process.cwd(), "public", "uploads", "products")
-        if (!existsSync(uploadDir)) {
-            await mkdir(uploadDir, { recursive: true })
+        // Read file as buffer
+        const bytes = await file.arrayBuffer()
+        const buffer = Buffer.from(bytes)
+
+        // Generate a unique filename
+        const timestamp = Date.now()
+        const safeName = file.name.replace(/[^a-z0-9._-]/gi, "_").toLowerCase()
+        const fileName = `${type}_${timestamp}_${safeName}`
+
+        // Upload to Google Drive
+        const drive = await getDriveClient()
+
+        const driveResponse = await drive.files.create({
+            requestBody: {
+                name: fileName,
+                parents: [PRODUCT_IMAGES_FOLDER_ID],
+            },
+            media: {
+                mimeType: file.type,
+                body: Readable.from(buffer),
+            },
+            fields: "id, webViewLink",
+            supportsAllDrives: true,
+        })
+
+        const fileId = driveResponse.data.id
+        if (!fileId) {
+            throw new Error("Drive upload did not return a file ID")
         }
 
-        // Generate unique filename
-        const ext = file.name.split(".").pop() || "jpg"
-        const timestamp = Date.now()
-        const safeName = file.name.replace(/[^a-z0-9.-]/gi, "_").toLowerCase()
-        const filename = `${type}_${timestamp}_${safeName}`
-        const filepath = join(uploadDir, filename)
+        // Make the file publicly readable so <img> tags work
+        await drive.permissions.create({
+            fileId,
+            supportsAllDrives: true,
+            requestBody: {
+                role: "reader",
+                type: "anyone",
+            },
+        })
 
-        // Write file to disk
-        const bytes = await file.arrayBuffer()
-        await writeFile(filepath, Buffer.from(bytes))
+        // Return a direct-embeddable image URL
+        // Google Drive direct image URL pattern: thumbnail / uc?export=view
+        const url = `https://drive.google.com/uc?export=view&id=${fileId}`
 
-        const url = `/uploads/products/${filename}`
-        return NextResponse.json({ url }, { status: 200 })
+        return NextResponse.json({ url, fileId }, { status: 200 })
     } catch (error: any) {
-        console.error("[Upload API]", error)
-        return NextResponse.json({ error: "Upload failed: " + error.message }, { status: 500 })
+        console.error("[Upload API - Drive]", error)
+        return NextResponse.json(
+            { error: "Upload failed: " + (error.message || "Unknown error") },
+            { status: 500 }
+        )
     }
 }
