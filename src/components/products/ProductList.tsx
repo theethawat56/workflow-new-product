@@ -23,6 +23,7 @@ interface Product {
     go_live_date: string
     sales_channel: string
     status: string
+    product_image_url?: string
     active_task?: string
     active_task_due_date?: string
 }
@@ -232,6 +233,7 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
                 <Table>
                     <TableHeader>
                         <TableRow>
+                            <TableHead className="w-[52px]"></TableHead>
                             <TableHead>SKU</TableHead>
                             <TableHead>Name</TableHead>
                             <TableHead>Category</TableHead>
@@ -257,6 +259,20 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
 
                                 return (
                                     <TableRow key={product.product_id}>
+                                        {/* Thumbnail */}
+                                        <TableCell className="pr-0">
+                                            {product.product_image_url ? (
+                                                <img
+                                                    src={product.product_image_url}
+                                                    alt={product.product_name}
+                                                    className="w-10 h-10 rounded-md object-cover border bg-muted/30 shrink-0"
+                                                />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-md border bg-muted/40 flex items-center justify-center shrink-0">
+                                                    <span className="text-muted-foreground text-[10px]">No img</span>
+                                                </div>
+                                            )}
+                                        </TableCell>
                                         <TableCell className="font-medium">
                                             {product.sku_code}
                                             {isNew && isLaunchedView && (

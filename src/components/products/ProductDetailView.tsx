@@ -115,6 +115,47 @@ export function ProductDetailView({ product, tasks, attachments }: Props) {
 
                     {/* Product Specific Details */}
                     <ProductSpecifics productId={product.product_id} tasks={tasks} />
+
+                    {/* Media Images */}
+                    {(product.product_image_url || product.contact_image_url) && (
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-sm text-muted-foreground">Product Media</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2">
+                                    {product.product_image_url && (
+                                        <div className="space-y-2">
+                                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                                📷 Product Photo
+                                            </p>
+                                            <a href={product.product_image_url} target="_blank" rel="noopener noreferrer">
+                                                <img
+                                                    src={product.product_image_url}
+                                                    alt="Product Photo"
+                                                    className="w-full max-h-64 object-contain rounded-xl border bg-muted/30 hover:opacity-90 transition-opacity cursor-zoom-in shadow-sm"
+                                                />
+                                            </a>
+                                        </div>
+                                    )}
+                                    {product.contact_image_url && (
+                                        <div className="space-y-2">
+                                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                                🪪 Contact / Name Card
+                                            </p>
+                                            <a href={product.contact_image_url} target="_blank" rel="noopener noreferrer">
+                                                <img
+                                                    src={product.contact_image_url}
+                                                    alt="Contact / Name Card"
+                                                    className="w-full max-h-64 object-contain rounded-xl border bg-muted/30 hover:opacity-90 transition-opacity cursor-zoom-in shadow-sm"
+                                                />
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
                 </TabsContent>
 
                 <TabsContent value="metrics">

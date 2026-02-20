@@ -27,6 +27,8 @@ export const SHEETS_CONFIG = {
             "created_by",
             "fair_detail",
             "date_of_fair",
+            "product_image_url",
+            "contact_image_url",
         ],
     },
     product_role_assignments: {

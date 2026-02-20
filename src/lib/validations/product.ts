@@ -20,6 +20,8 @@ export const productSchema = z.object({
     price: z.coerce.number().min(0, "Price must be >= 0"),
     fair_detail: z.string().optional(),
     date_of_fair: z.string().optional(),
+    product_image_url: z.string().optional(),
+    contact_image_url: z.string().optional(),
     activate: z.boolean(),
 })
 
