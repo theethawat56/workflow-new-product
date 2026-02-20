@@ -76,9 +76,10 @@ export async function POST(req: NextRequest) {
             },
         })
 
-        // Use thumbnail URL — reliably embeds directly in <img> tags
-        // (uc?export=view can redirect to a confirmation page for larger files)
-        const url = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`
+        // Store URL as our own image proxy route — serves from same domain,
+        // avoids Google Drive embed/CORS/confirmation-page issues
+        const baseUrl = process.env.NEXTAUTH_URL || "https://work-flow-new-product.vercel.app"
+        const url = `${baseUrl}/api/image?fileId=${fileId}`
         return NextResponse.json({ url, fileId }, { status: 200 })
 
     } catch (error: any) {
