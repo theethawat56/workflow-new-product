@@ -1,7 +1,7 @@
 "use client"
 
-import { useMemo } from "react"
-import { AlertTriangle, Package, CheckCircle, XCircle, TrendingDown, Clock } from "lucide-react"
+import { useState, useMemo } from "react"
+import { AlertTriangle, Package, CheckCircle, XCircle, TrendingDown, Clock, Filter } from "lucide-react"
 
 interface StockItem {
     STATUS: string
@@ -21,7 +21,12 @@ function parseNum(val: string | number): number {
     return isNaN(n) ? 0 : n
 }
 
-// Auto-calculate status from Current Stock vs Safety Stock pcs
+// Only show items with a non-empty STATUS column
+function hasStatus(item: StockItem): boolean {
+    return !!(item.STATUS && String(item.STATUS).trim() !== "")
+}
+
+// Auto-calculate status from Current Stock vs Safety Stock pcs + DIO
 function calcStatus(item: StockItem): "oos" | "low" | "ok" {
     const stock = parseNum(item["Current Stock"])
     const safety = parseNum(item["Safety Stock pcs"])
@@ -32,7 +37,13 @@ function calcStatus(item: StockItem): "oos" | "low" | "ok" {
     return "ok"
 }
 
-const STATUS_CONFIG = {
+type StatusKey = "oos" | "low" | "ok"
+
+const STATUS_CONFIG: Record<StatusKey, {
+    label: string; bg: string; header: string; badge: string;
+    stockColor: string; icon: any; iconColor: string; dot: string;
+    sectionBg: string; sectionBorder: string; kpiBg: string; kpiRing: string;
+}> = {
     oos: {
         label: "Out of Stock",
         bg: "bg-red-50 border-red-300",
@@ -40,10 +51,12 @@ const STATUS_CONFIG = {
         badge: "bg-red-100 text-red-700 border border-red-300",
         stockColor: "text-red-600",
         icon: XCircle,
-        iconColor: "text-red-500",
+        iconColor: "text-red-600",
         dot: "bg-red-500",
         sectionBg: "bg-red-50/60",
         sectionBorder: "border-red-200",
+        kpiBg: "bg-red-50 hover:bg-red-100",
+        kpiRing: "ring-red-400",
     },
     low: {
         label: "Low Stock",
@@ -52,37 +65,38 @@ const STATUS_CONFIG = {
         badge: "bg-amber-100 text-amber-700 border border-amber-300",
         stockColor: "text-amber-600",
         icon: AlertTriangle,
-        iconColor: "text-amber-500",
+        iconColor: "text-amber-600",
         dot: "bg-amber-400",
         sectionBg: "bg-amber-50/60",
         sectionBorder: "border-amber-200",
+        kpiBg: "bg-amber-50 hover:bg-amber-100",
+        kpiRing: "ring-amber-400",
     },
     ok: {
-        label: "OK",
+        label: "Healthy Stock",
         bg: "bg-green-50 border-green-200",
         header: "bg-green-500",
         badge: "bg-green-100 text-green-700 border border-green-300",
         stockColor: "text-green-700",
         icon: CheckCircle,
-        iconColor: "text-green-500",
+        iconColor: "text-green-600",
         dot: "bg-green-500",
         sectionBg: "bg-green-50/40",
         sectionBorder: "border-green-200",
+        kpiBg: "bg-green-50 hover:bg-green-100",
+        kpiRing: "ring-green-400",
     },
 }
 
-function StockCard({ item }: { item: StockItem & { _status: "oos" | "low" | "ok" } }) {
+function StockCard({ item }: { item: StockItem & { _status: StatusKey } }) {
     const cfg = STATUS_CONFIG[item._status]
-    const Icon = cfg.icon
     const stock = parseNum(item["Current Stock"])
     const safety = parseNum(item["Safety Stock pcs"])
     const dio = parseNum(item["Day inventory outstanding"])
 
     return (
         <div className={`rounded-xl border-2 ${cfg.bg} overflow-hidden shadow-sm flex flex-col`}>
-            {/* Card top color bar */}
             <div className={`h-1.5 w-full ${cfg.header}`} />
-
             <div className="p-4 flex flex-col gap-3 flex-1">
                 {/* Status badge + SKU */}
                 <div className="flex items-start justify-between gap-2">
@@ -109,10 +123,9 @@ function StockCard({ item }: { item: StockItem & { _status: "oos" | "low" | "ok"
                     </p>
                 </div>
 
-                {/* Divider */}
-                <div className="border-t border-dashed border-current/10" />
+                <div className="border-t border-dashed opacity-20" />
 
-                {/* Safety stock + DIO */}
+                {/* Reorder point + Days left */}
                 <div className="grid grid-cols-2 gap-2">
                     <div className="bg-white/60 rounded-lg p-2">
                         <div className="flex items-center gap-1 mb-0.5">
@@ -130,7 +143,7 @@ function StockCard({ item }: { item: StockItem & { _status: "oos" | "low" | "ok"
                             <p className="text-[9px] uppercase tracking-wide text-muted-foreground font-medium">Days Left</p>
                         </div>
                         <p className={`text-base font-bold tabular-nums ${dio <= 0 ? "text-red-600" : dio <= 14 ? "text-amber-600" : "text-foreground"}`}>
-                            {dio > 0 ? dio.toFixed(0) : "0"}
+                            {dio > 0 ? Math.round(dio) : "0"}
                             <span className="text-[10px] font-normal text-muted-foreground ml-0.5">days</span>
                         </p>
                     </div>
@@ -140,11 +153,11 @@ function StockCard({ item }: { item: StockItem & { _status: "oos" | "low" | "ok"
     )
 }
 
-function SectionHeader({ status, count }: { status: "oos" | "low" | "ok"; count: number }) {
+function SectionHeader({ status, count, dimmed }: { status: StatusKey; count: number; dimmed: boolean }) {
     const cfg = STATUS_CONFIG[status]
     const Icon = cfg.icon
     return (
-        <div className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${cfg.sectionBg} ${cfg.sectionBorder}`}>
+        <div className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-opacity ${cfg.sectionBg} ${cfg.sectionBorder} ${dimmed ? "opacity-40" : "opacity-100"}`}>
             <Icon className={`h-4 w-4 ${cfg.iconColor}`} />
             <span className={`font-semibold text-sm ${cfg.iconColor}`}>{cfg.label}</span>
             <span className="text-xs text-muted-foreground">— {count} SKU{count !== 1 ? "s" : ""}</span>
@@ -153,47 +166,90 @@ function SectionHeader({ status, count }: { status: "oos" | "low" | "ok"; count:
 }
 
 export function StockDashboard({ items }: Props) {
+    const [activeFilter, setActiveFilter] = useState<StatusKey | null>(null)
+
+    // Filter to only items that have a STATUS value in the sheet
+    const validItems = useMemo(() => items.filter(hasStatus), [items])
+
     const enriched = useMemo(() =>
-        items.map(item => ({ ...item, _status: calcStatus(item) as "oos" | "low" | "ok" }))
+        validItems
+            .map(item => ({ ...item, _status: calcStatus(item) as StatusKey }))
             .sort((a, b) => {
-                const order = { oos: 0, low: 1, ok: 2 }
+                const order: Record<StatusKey, number> = { oos: 0, low: 1, ok: 2 }
                 return order[a._status] - order[b._status]
             }),
-        [items]
+        [validItems]
     )
 
     const oosItems = enriched.filter(i => i._status === "oos")
     const lowItems = enriched.filter(i => i._status === "low")
     const okItems = enriched.filter(i => i._status === "ok")
-
     const totalUnits = enriched.reduce((s, i) => s + parseNum(i["Current Stock"]), 0)
+
+    const handleKpiClick = (key: StatusKey) => {
+        setActiveFilter(prev => prev === key ? null : key)
+    }
+
+    const isFiltered = activeFilter !== null
+
+    const kpiCards = [
+        { key: null as null, icon: Package, label: "Total SKUs", value: validItems.length, sub: `${totalUnits.toLocaleString()} units`, color: "text-slate-700", iconBg: "bg-slate-100", kpiBg: "bg-slate-50 hover:bg-slate-100", kpiRing: "ring-slate-400" },
+        { key: "oos" as StatusKey, icon: XCircle, label: "Out of Stock", value: oosItems.length, sub: "needs restocking now", color: STATUS_CONFIG.oos.iconColor, iconBg: "bg-red-100", kpiBg: STATUS_CONFIG.oos.kpiBg, kpiRing: STATUS_CONFIG.oos.kpiRing },
+        { key: "low" as StatusKey, icon: AlertTriangle, label: "Low Stock", value: lowItems.length, sub: "below safety stock", color: STATUS_CONFIG.low.iconColor, iconBg: "bg-amber-100", kpiBg: STATUS_CONFIG.low.kpiBg, kpiRing: STATUS_CONFIG.low.kpiRing },
+        { key: "ok" as StatusKey, icon: CheckCircle, label: "Healthy", value: okItems.length, sub: "stock levels OK", color: STATUS_CONFIG.ok.iconColor, iconBg: "bg-green-100", kpiBg: STATUS_CONFIG.ok.kpiBg, kpiRing: STATUS_CONFIG.ok.kpiRing },
+    ]
 
     return (
         <div className="space-y-6">
 
-            {/* ── KPI Summary Row ── */}
+            {/* ── KPI Cards (clickable to filter) ── */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                    { icon: Package, label: "Total SKUs", value: items.length, sub: `${totalUnits.toLocaleString()} units`, color: "text-slate-700", bg: "bg-slate-100" },
-                    { icon: XCircle, label: "Out of Stock", value: oosItems.length, sub: "needs restocking now", color: "text-red-600", bg: "bg-red-100" },
-                    { icon: AlertTriangle, label: "Low Stock", value: lowItems.length, sub: "below safety stock", color: "text-amber-600", bg: "bg-amber-100" },
-                    { icon: CheckCircle, label: "Healthy", value: okItems.length, sub: "stock levels OK", color: "text-green-600", bg: "bg-green-100" },
-                ].map(({ icon: Icon, label, value, sub, color, bg }) => (
-                    <div key={label} className="rounded-xl border bg-white shadow-sm p-4 flex items-start gap-3">
-                        <div className={`p-2 rounded-lg ${bg}`}>
-                            <Icon className={`h-4 w-4 ${color}`} />
-                        </div>
-                        <div>
-                            <p className="text-xs text-muted-foreground">{label}</p>
-                            <p className={`text-2xl font-black ${color}`}>{value}</p>
-                            <p className="text-[10px] text-muted-foreground">{sub}</p>
-                        </div>
-                    </div>
-                ))}
+                {kpiCards.map(({ key, icon: Icon, label, value, sub, color, iconBg, kpiBg, kpiRing }) => {
+                    const isActive = key !== null && activeFilter === key
+                    return (
+                        <button
+                            key={label}
+                            onClick={() => key !== null && handleKpiClick(key)}
+                            className={`rounded-xl border text-left shadow-sm p-4 flex items-start gap-3 transition-all duration-200
+                                ${kpiBg}
+                                ${key !== null ? "cursor-pointer" : "cursor-default"}
+                                ${isActive ? `ring-2 ${kpiRing} shadow-md scale-[1.02]` : ""}
+                            `}
+                        >
+                            <div className={`p-2 rounded-lg ${iconBg} shrink-0`}>
+                                <Icon className={`h-4 w-4 ${color}`} />
+                            </div>
+                            <div>
+                                <p className="text-xs text-muted-foreground">{label}</p>
+                                <p className={`text-2xl font-black ${color}`}>{value}</p>
+                                <p className="text-[10px] text-muted-foreground">{sub}</p>
+                            </div>
+                            {isActive && (
+                                <span className="ml-auto mt-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-white/80 border text-muted-foreground flex items-center gap-0.5">
+                                    <Filter className="h-2.5 w-2.5" /> ON
+                                </span>
+                            )}
+                        </button>
+                    )
+                })}
             </div>
 
+            {/* Active filter chip */}
+            {isFiltered && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Filter className="h-4 w-4" />
+                    Showing <strong className="text-foreground">{STATUS_CONFIG[activeFilter!].label}</strong> only
+                    <button
+                        onClick={() => setActiveFilter(null)}
+                        className="ml-1 text-xs underline hover:text-foreground"
+                    >
+                        Clear filter
+                    </button>
+                </div>
+            )}
+
             {/* ── Alert banner ── */}
-            {(oosItems.length > 0 || lowItems.length > 0) && (
+            {(oosItems.length > 0 || lowItems.length > 0) && !isFiltered && (
                 <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
                     <TrendingDown className="h-5 w-5 shrink-0" />
                     <span>
@@ -203,9 +259,9 @@ export function StockDashboard({ items }: Props) {
             )}
 
             {/* ── Out of Stock Section ── */}
-            {oosItems.length > 0 && (
-                <div className="space-y-3">
-                    <SectionHeader status="oos" count={oosItems.length} />
+            {oosItems.length > 0 && (!isFiltered || activeFilter === "oos") && (
+                <div className={`space-y-3 transition-opacity ${isFiltered && activeFilter !== "oos" ? "opacity-30 pointer-events-none" : ""}`}>
+                    <SectionHeader status="oos" count={oosItems.length} dimmed={false} />
                     <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {oosItems.map((item, i) => <StockCard key={i} item={item} />)}
                     </div>
@@ -213,9 +269,9 @@ export function StockDashboard({ items }: Props) {
             )}
 
             {/* ── Low Stock Section ── */}
-            {lowItems.length > 0 && (
-                <div className="space-y-3">
-                    <SectionHeader status="low" count={lowItems.length} />
+            {lowItems.length > 0 && (!isFiltered || activeFilter === "low") && (
+                <div className={`space-y-3 transition-opacity ${isFiltered && activeFilter !== "low" ? "opacity-30 pointer-events-none" : ""}`}>
+                    <SectionHeader status="low" count={lowItems.length} dimmed={false} />
                     <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {lowItems.map((item, i) => <StockCard key={i} item={item} />)}
                     </div>
@@ -223,19 +279,19 @@ export function StockDashboard({ items }: Props) {
             )}
 
             {/* ── OK Section ── */}
-            {okItems.length > 0 && (
-                <div className="space-y-3">
-                    <SectionHeader status="ok" count={okItems.length} />
+            {okItems.length > 0 && (!isFiltered || activeFilter === "ok") && (
+                <div className={`space-y-3 transition-opacity ${isFiltered && activeFilter !== "ok" ? "opacity-30 pointer-events-none" : ""}`}>
+                    <SectionHeader status="ok" count={okItems.length} dimmed={false} />
                     <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {okItems.map((item, i) => <StockCard key={i} item={item} />)}
                     </div>
                 </div>
             )}
 
-            {items.length === 0 && (
+            {validItems.length === 0 && (
                 <div className="text-center py-24 text-muted-foreground">
                     <Package className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                    <p>No stock data found in the Stock_AT sheet.</p>
+                    <p>No stock data with a STATUS value found in the Stock_AT sheet.</p>
                 </div>
             )}
         </div>
