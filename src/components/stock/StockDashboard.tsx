@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { AlertTriangle, Package, CheckCircle, XCircle, TrendingDown, Clock, Filter } from "lucide-react"
+import { AlertTriangle, Package, CheckCircle, XCircle, TrendingDown, Clock, Filter, Search, X } from "lucide-react"
+import { Input } from "@/components/ui/input"
 
 interface StockItem {
     STATUS: string
@@ -167,19 +168,25 @@ function SectionHeader({ status, count, dimmed }: { status: StatusKey; count: nu
 
 export function StockDashboard({ items }: Props) {
     const [activeFilter, setActiveFilter] = useState<StatusKey | null>(null)
+    const [search, setSearch] = useState("")
 
     // Filter to only items that have a STATUS value in the sheet
     const validItems = useMemo(() => items.filter(hasStatus), [items])
 
-    const enriched = useMemo(() =>
-        validItems
+    const enriched = useMemo(() => {
+        const q = search.toLowerCase().trim()
+        return validItems
+            .filter(item =>
+                !q ||
+                (item["Product Name"] || "").toLowerCase().includes(q) ||
+                (item.SKU || "").toLowerCase().includes(q)
+            )
             .map(item => ({ ...item, _status: calcStatus(item) as StatusKey }))
             .sort((a, b) => {
                 const order: Record<StatusKey, number> = { oos: 0, low: 1, ok: 2 }
                 return order[a._status] - order[b._status]
-            }),
-        [validItems]
-    )
+            })
+    }, [validItems, search])
 
     const oosItems = enriched.filter(i => i._status === "oos")
     const lowItems = enriched.filter(i => i._status === "low")
@@ -232,6 +239,25 @@ export function StockDashboard({ items }: Props) {
                         </button>
                     )
                 })}
+            </div>
+
+            {/* ── Search bar ── */}
+            <div className="relative max-w-sm">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                    placeholder="Search SKU or product name…"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    className="pl-9 pr-9 bg-white"
+                />
+                {search && (
+                    <button
+                        onClick={() => setSearch("")}
+                        className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+                    >
+                        <X className="h-4 w-4" />
+                    </button>
+                )}
             </div>
 
             {/* Active filter chip */}
