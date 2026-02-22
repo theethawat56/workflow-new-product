@@ -187,6 +187,8 @@ export const SHEETS_CONFIG = {
             "SKU",
             "Product Name",
             "Current Stock",
+            "Safety Stock pcs",
+            "Day inventory outstanding",
         ]
     }
 } as const
