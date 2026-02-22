@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import {
     LayoutDashboard,
     Package,
+    Package2,
     Users,
     LogOut,
     Rocket,
@@ -39,6 +40,7 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
         { href: "/dashboard/launch", label: "Launch Control", icon: Rocket },
         { href: "/products/pipeline", label: "New Products", icon: Package },
         { href: "/products/on-sale", label: "Products on Sale", icon: Package },
+        { href: "/stock", label: "Stock", icon: Package2 },
         { href: "/about", label: "System Overview", icon: Info },
         { href: "/admin", label: "Admin", icon: Users, requiredRole: "Admin" },
     ]

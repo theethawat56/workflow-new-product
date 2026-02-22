@@ -179,6 +179,15 @@ export const SHEETS_CONFIG = {
             "Revenue",
             "Avg Selling Price"
         ]
+    },
+    stock_at: {
+        name: "Stock_AT",
+        headers: [
+            "STATUS",
+            "SKU",
+            "Product Name",
+            "Current Stock",
+        ]
     }
 } as const
 
