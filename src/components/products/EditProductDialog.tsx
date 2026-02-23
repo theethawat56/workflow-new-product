@@ -59,7 +59,6 @@ export function EditProductDialog({ product }: Props) {
     }
 
     const form = useForm<FormValues>({
-        resolver: zodResolver(editFormSchema),
         defaultValues: {
             sku_code: product.sku_code || "",
             product_name: product.product_name || "",
