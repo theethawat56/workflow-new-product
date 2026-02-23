@@ -63,7 +63,6 @@ export function NewProductForm({ users, roleDefaults }: Props) {
     })
 
     const form = useForm<FormValues>({
-        resolver: zodResolver(combinedSchema),
         defaultValues: {
             sku_code: "",
             product_name: "",
@@ -81,7 +80,6 @@ export function NewProductForm({ users, roleDefaults }: Props) {
             activate: false,
             assignments: defaultAssignments
         },
-        mode: "onChange"
     })
 
     const { fields } = useFieldArray({
