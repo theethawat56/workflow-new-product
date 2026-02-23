@@ -5,7 +5,7 @@ import { useForm, useFieldArray } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { productSchema, roleAssignmentSchema } from "@/lib/validations/product"
-import { createProductAction } from "@/app/actions/product"
+import { createProductAction, generateSkuAction } from "@/app/actions/product"
 import { Button } from "@/components/ui/button"
 import {
     Form,
@@ -49,6 +49,7 @@ export function NewProductForm({ users, roleDefaults }: Props) {
     const [productImage, setProductImage] = useState<File | null>(null)
     const [contactImage, setContactImage] = useState<File | null>(null)
     const [uploadError, setUploadError] = useState<string | null>(null)
+    const [skuLoading, setSkuLoading] = useState(true)
     const router = useRouter()
 
     // Initialize defaults for role assignments
@@ -94,6 +95,20 @@ export function NewProductForm({ users, roleDefaults }: Props) {
     useEffect(() => {
         form.setValue("sub_category", "")
     }, [selectedCategory, form])
+
+    // Auto-generate SKU code on mount
+    useEffect(() => {
+        setSkuLoading(true)
+        generateSkuAction()
+            .then(sku => {
+                form.setValue("sku_code", sku)
+            })
+            .catch(() => {
+                // Leave blank so user can type manually
+            })
+            .finally(() => setSkuLoading(false))
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     const subCategories = selectedCategory ? PRODUCT_CATEGORIES[selectedCategory] || [] : []
 
@@ -220,7 +235,22 @@ export function NewProductForm({ users, roleDefaults }: Props) {
                             <FormField control={form.control} name="sku_code" render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>SKU Code</FormLabel>
-                                    <FormControl><Input placeholder="PRD-001" {...field} /></FormControl>
+                                    <FormControl>
+                                        <div className="relative">
+                                            <Input
+                                                placeholder="Generating…"
+                                                {...field}
+                                                disabled={skuLoading}
+                                                className={skuLoading ? "pr-8 text-muted-foreground" : ""}
+                                            />
+                                            {skuLoading && (
+                                                <span className="absolute right-3 top-2.5 h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                                            )}
+                                        </div>
+                                    </FormControl>
+                                    <FormDescription className="text-[11px]">
+                                        {skuLoading ? "Generating SKU…" : "Auto-generated · you can edit if needed"}
+                                    </FormDescription>
                                     <FormMessage />
                                 </FormItem>
                             )} />

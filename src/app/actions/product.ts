@@ -327,3 +327,34 @@ export async function updateProductSpecificAction(productId: string, taskCode: s
         return { success: false, message: error.message }
     }
 }
+
+/**
+ * Generate the next sequential SKU code for the current month.
+ * Format: PRD-YYYYMM#### (e.g. PRD-2026020001)
+ * Reads existing products to find the highest number used this month.
+ */
+export async function generateSkuAction(): Promise<string> {
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = String(now.getMonth() + 1).padStart(2, "0")
+    const prefix = `PRD-${year}${month}`
+
+    try {
+        const products = await findAll<{ sku_code: string }>("products")
+
+        // Find all SKUs matching this month's prefix and extract the sequence number
+        const thisMonthNums = products
+            .map(p => p.sku_code || "")
+            .filter(sku => sku.startsWith(prefix))
+            .map(sku => parseInt(sku.replace(prefix, ""), 10))
+            .filter(n => !isNaN(n))
+
+        const maxNum = thisMonthNums.length > 0 ? Math.max(...thisMonthNums) : 0
+        const nextNum = String(maxNum + 1).padStart(4, "0")
+
+        return `${prefix}${nextNum}`
+    } catch {
+        // Fallback: start from 0001
+        return `${prefix}0001`
+    }
+}
