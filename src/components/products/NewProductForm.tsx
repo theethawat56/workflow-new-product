@@ -37,8 +37,8 @@ interface Props {
 }
 
 const STEPS = [
-    { id: 1, label: "Product Info" },
-    { id: 2, label: "Media Upload" },
+    { id: 1, label: "Media Upload" },
+    { id: 2, label: "Product Info" },
     { id: 3, label: "Roles" },
     { id: 4, label: "Confirm" },
 ]
@@ -176,13 +176,10 @@ export function NewProductForm({ users, roleDefaults }: Props) {
     const nextStep = async () => {
         let valid = false
         if (step === 1) {
-            valid = await form.trigger([
-                "sku_code", "product_name", "category", "sub_category",
-                "launch_month", "go_live_date", "sales_channel", "cost", "price",
-                "fair_detail", "date_of_fair"
-            ])
-        } else if (step === 2) {
             // Media upload is optional — always allow proceeding
+            valid = true
+        } else if (step === 2) {
+            // Product Info — no required validation, always allow proceeding
             valid = true
         } else if (step === 3) {
             valid = await form.trigger(["assignments"])
@@ -224,8 +221,8 @@ export function NewProductForm({ users, roleDefaults }: Props) {
                     ))}
                 </div>
 
-                {/* ── Step 1: Product Info ── */}
-                {step === 1 && (
+                {/* ── Step 1: Media Upload ── */}
+                {step === 2 && (
                     <Card>
                         <CardHeader>
                             <CardTitle>Product Information</CardTitle>
@@ -404,13 +401,13 @@ export function NewProductForm({ users, roleDefaults }: Props) {
                             )} />
                         </CardContent>
                         <CardFooter className="justify-end">
-                            <Button type="button" onClick={nextStep}>Next: Media Upload →</Button>
+                            <Button type="button" onClick={nextStep}>Next: Product Info →</Button>
                         </CardFooter>
                     </Card>
                 )}
 
-                {/* ── Step 2: Media Upload ── */}
-                {step === 2 && (
+                {/* ── Step 2: Product Information ── */}
+                {step === 1 && (
                     <Card>
                         <CardHeader>
                             <CardTitle>Media Upload</CardTitle>
@@ -445,9 +442,8 @@ export function NewProductForm({ users, roleDefaults }: Props) {
                                 <p className="mt-4 text-sm text-destructive text-center">{uploadError}</p>
                             )}
                         </CardContent>
-                        <CardFooter className="flex justify-between">
-                            <Button type="button" variant="outline" onClick={prevStep}>← Back</Button>
-                            <Button type="button" onClick={nextStep}>Next: Roles →</Button>
+                        <CardFooter className="justify-end">
+                            <Button type="button" onClick={nextStep}>Next: Product Info →</Button>
                         </CardFooter>
                     </Card>
                 )}
