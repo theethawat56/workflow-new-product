@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import React, { useState, useMemo } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -11,8 +11,11 @@ import { updateProductStatusAction } from "@/app/actions/product"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Loader2, Rocket, RotateCcw } from "lucide-react"
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, ChevronRight, Loader2, Rocket, RotateCcw } from "lucide-react"
 import { useRouter } from "next/navigation"
+
+type SortField = "name" | "launch_date" | null
+type SortDir = "asc" | "desc"
 
 interface Product {
     product_id: string
@@ -40,6 +43,31 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
     const [channelFilter, setChannelFilter] = useState("ALL")
     const [launchFilter, setLaunchFilter] = useState("ALL") // ALL | NEW | CATALOG
 
+    // Sort state
+    const [sortField, setSortField] = useState<SortField>(null)
+    const [sortDir, setSortDir] = useState<SortDir>("asc")
+
+    // Expanded rows (drill-down)
+    const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+
+    const toggleExpand = (id: string) => {
+        setExpandedRows(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
+
+    const handleSort = (field: SortField) => {
+        if (sortField === field) {
+            setSortDir(d => d === "asc" ? "desc" : "asc")
+        } else {
+            setSortField(field)
+            setSortDir("asc")
+        }
+    }
+
     const currentYear = new Date().getFullYear()
 
     // Launch Modal State
@@ -52,6 +80,7 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
     const [unlaunchOpen, setUnlaunchOpen] = useState(false)
     const [isUnlaunching, setIsUnlaunching] = useState(false)
     const [unlaunchTarget, setUnlaunchTarget] = useState<Product | null>(null)
+
 
     const handleLaunchClick = (product: Product) => {
         setSelectedProduct(product)
@@ -133,7 +162,7 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
     }
 
     const filtered = useMemo(() => {
-        return initialProducts.filter(p => {
+        const results = initialProducts.filter(p => {
             const matchesSearch =
                 p.product_name.toLowerCase().includes(search.toLowerCase()) ||
                 p.sku_code.toLowerCase().includes(search.toLowerCase())
@@ -148,17 +177,36 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
                 const launchYear = launchDate ? launchDate.getFullYear() : null
 
                 if (launchFilter === "NEW") {
-                    // New = Launched in current year
                     matchesLaunch = launchYear === currentYear
                 } else if (launchFilter === "CATALOG") {
-                    // Catalog = Launched before current year or no date
                     matchesLaunch = launchYear !== currentYear
                 }
             }
 
             return matchesSearch && matchesStatus && matchesChannel && matchesLaunch
         })
-    }, [initialProducts, search, statusFilter, channelFilter, launchFilter, isLaunchedView, currentYear])
+
+        // Apply sort
+        if (sortField) {
+            results.sort((a, b) => {
+                let valA: string | number = ""
+                let valB: string | number = ""
+                if (sortField === "name") {
+                    valA = a.product_name?.toLowerCase() ?? ""
+                    valB = b.product_name?.toLowerCase() ?? ""
+                } else if (sortField === "launch_date") {
+                    valA = a.go_live_date ? new Date(a.go_live_date).getTime() : 0
+                    valB = b.go_live_date ? new Date(b.go_live_date).getTime() : 0
+                }
+                if (valA < valB) return sortDir === "asc" ? -1 : 1
+                if (valA > valB) return sortDir === "asc" ? 1 : -1
+                return 0
+            })
+        }
+
+        return results
+    }, [initialProducts, search, statusFilter, channelFilter, launchFilter, isLaunchedView, currentYear, sortField, sortDir])
+
 
     // Get unique channels for filter
     const channels = Array.from(new Set(initialProducts.map(p => p.sales_channel).filter(Boolean)))
@@ -233,11 +281,41 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
                 <Table>
                     <TableHeader>
                         <TableRow>
+                            {/* Expand toggle column */}
+                            <TableHead className="w-[36px]"></TableHead>
                             <TableHead className="w-[52px]"></TableHead>
                             <TableHead>SKU</TableHead>
-                            <TableHead>Name</TableHead>
+                            {/* Sortable Name */}
+                            <TableHead>
+                                <button
+                                    className="flex items-center gap-1 hover:text-foreground transition-colors"
+                                    onClick={() => handleSort("name")}
+                                >
+                                    Name
+                                    {sortField === "name"
+                                        ? sortDir === "asc"
+                                            ? <ArrowUp className="h-3 w-3" />
+                                            : <ArrowDown className="h-3 w-3" />
+                                        : <ArrowUpDown className="h-3 w-3 opacity-40" />
+                                    }
+                                </button>
+                            </TableHead>
                             <TableHead>Category</TableHead>
-                            <TableHead>Launch Date</TableHead>
+                            {/* Sortable Launch Date */}
+                            <TableHead>
+                                <button
+                                    className="flex items-center gap-1 hover:text-foreground transition-colors"
+                                    onClick={() => handleSort("launch_date")}
+                                >
+                                    Launch Date
+                                    {sortField === "launch_date"
+                                        ? sortDir === "asc"
+                                            ? <ArrowUp className="h-3 w-3" />
+                                            : <ArrowDown className="h-3 w-3" />
+                                        : <ArrowUpDown className="h-3 w-3 opacity-40" />
+                                    }
+                                </button>
+                            </TableHead>
                             <TableHead>Active Task</TableHead>
                             <TableHead>Due Date</TableHead>
                             <TableHead>Status</TableHead>
@@ -247,7 +325,7 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
                     <TableBody>
                         {filtered.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={8} className="text-center h-24">
+                                <TableCell colSpan={10} className="text-center h-24">
                                     No results.
                                 </TableCell>
                             </TableRow>
@@ -256,96 +334,139 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
                                 const launchDate = product.go_live_date ? new Date(product.go_live_date) : null
                                 const launchYear = launchDate ? launchDate.getFullYear() : null
                                 const isNew = launchYear === currentYear
+                                const isExpanded = expandedRows.has(product.product_id)
 
                                 return (
-                                    <TableRow key={product.product_id}>
-                                        {/* Thumbnail */}
-                                        <TableCell className="pr-0">
-                                            {product.product_image_url ? (
-                                                <img
-                                                    src={product.product_image_url}
-                                                    alt={product.product_name}
-                                                    className="w-10 h-10 rounded-md object-cover border bg-muted/30 shrink-0"
-                                                />
-                                            ) : (
-                                                <div className="w-10 h-10 rounded-md border bg-muted/40 flex items-center justify-center shrink-0">
-                                                    <span className="text-muted-foreground text-[10px]">No img</span>
-                                                </div>
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="font-medium">
-                                            {product.sku_code}
-                                            {isNew && isLaunchedView && (
-                                                <Badge variant="outline" className="ml-2 py-0 h-5 text-[10px] bg-green-50 text-green-700 border-green-200">
-                                                    NEW {launchYear}
-                                                </Badge>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>{product.product_name}</TableCell>
-                                        <TableCell>{product.category}</TableCell>
-                                        <TableCell>
-                                            <div className="flex flex-col">
-                                                <span className="font-medium">{product.launch_month}</span>
-                                                {launchYear && launchYear !== currentYear && (
-                                                    <span className="text-xs text-muted-foreground">{launchYear}</span>
+                                    <React.Fragment key={product.product_id}>
+                                        <TableRow key={product.product_id} className={cn(isExpanded && "border-b-0")}>
+                                            {/* Expand chevron */}
+                                            <TableCell className="pr-0 pl-2">
+                                                <button
+                                                    onClick={() => toggleExpand(product.product_id)}
+                                                    className="text-muted-foreground hover:text-foreground transition-colors"
+                                                    aria-label={isExpanded ? "Collapse" : "Expand"}
+                                                >
+                                                    {isExpanded
+                                                        ? <ChevronDown className="h-4 w-4" />
+                                                        : <ChevronRight className="h-4 w-4" />
+                                                    }
+                                                </button>
+                                            </TableCell>
+                                            {/* Thumbnail */}
+                                            <TableCell className="pr-0">
+                                                {product.product_image_url ? (
+                                                    <img
+                                                        src={product.product_image_url}
+                                                        alt={product.product_name}
+                                                        className="w-10 h-10 rounded-md object-cover border bg-muted/30 shrink-0"
+                                                    />
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-md border bg-muted/40 flex items-center justify-center shrink-0">
+                                                        <span className="text-muted-foreground text-[10px]">No img</span>
+                                                    </div>
                                                 )}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            {product.active_task && product.active_task !== '-' ? (
-                                                <Badge variant="secondary" className="font-normal">
-                                                    {product.active_task}
-                                                </Badge>
-                                            ) : (
-                                                <span className="text-muted-foreground">-</span>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>{product.active_task_due_date || '-'}</TableCell>
-                                        <TableCell>
-                                            <Badge variant={
-                                                product.status === 'Launched' ? 'default' :
-                                                    product.status === 'Active' ? 'secondary' : 'outline'
-                                            }>
-                                                {product.status}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell className="text-right space-x-2">
-                                            {/* Launch Button (Only for Pipeline View) */}
-                                            {!isLaunchedView && product.status !== 'Launched' && (
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="h-8 gap-1 text-green-600 hover:text-green-700 hover:bg-green-50"
-                                                    onClick={() => handleLaunchClick(product)}
-                                                >
-                                                    <Rocket className="h-3 w-3" />
-                                                    Launch
-                                                </Button>
-                                            )}
-
-                                            {/* Un-Launch Button (Only for Launched View) */}
-                                            {isLaunchedView && product.status === 'Launched' && (
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="h-8 gap-1 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                                    onClick={() => onUnlaunchClick(product)}
-                                                    disabled={isUnlaunching && unlaunchTarget?.product_id === product.product_id}
-                                                >
-                                                    {isUnlaunching && unlaunchTarget?.product_id === product.product_id ? (
-                                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                                    ) : (
-                                                        <RotateCcw className="h-3 w-3" />
+                                            </TableCell>
+                                            <TableCell className="font-medium">
+                                                {product.sku_code}
+                                                {isNew && isLaunchedView && (
+                                                    <Badge variant="outline" className="ml-2 py-0 h-5 text-[10px] bg-green-50 text-green-700 border-green-200">
+                                                        NEW {launchYear}
+                                                    </Badge>
+                                                )}
+                                            </TableCell>
+                                            <TableCell>{product.product_name}</TableCell>
+                                            <TableCell>{product.category}</TableCell>
+                                            <TableCell>
+                                                <div className="flex flex-col">
+                                                    <span className="font-medium">{product.launch_month}</span>
+                                                    {launchYear && launchYear !== currentYear && (
+                                                        <span className="text-xs text-muted-foreground">{launchYear}</span>
                                                     )}
-                                                    Undo
-                                                </Button>
-                                            )}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                {product.active_task && product.active_task !== '-' ? (
+                                                    <Badge variant="secondary" className="font-normal">
+                                                        {product.active_task}
+                                                    </Badge>
+                                                ) : (
+                                                    <span className="text-muted-foreground">-</span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell>{product.active_task_due_date || '-'}</TableCell>
+                                            <TableCell>
+                                                <Badge variant={
+                                                    product.status === 'Launched' ? 'default' :
+                                                        product.status === 'Active' ? 'secondary' : 'outline'
+                                                }>
+                                                    {product.status}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell className="text-right space-x-2">
+                                                {/* Launch Button (Only for Pipeline View) */}
+                                                {!isLaunchedView && product.status !== 'Launched' && (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="h-8 gap-1 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                        onClick={() => handleLaunchClick(product)}
+                                                    >
+                                                        <Rocket className="h-3 w-3" />
+                                                        Launch
+                                                    </Button>
+                                                )}
 
-                                            <Button variant="ghost" size="sm" asChild>
-                                                <Link href={`/products/${product.product_id}`}>View</Link>
-                                            </Button>
-                                        </TableCell>
-                                    </TableRow>
+                                                {/* Un-Launch Button (Only for Launched View) */}
+                                                {isLaunchedView && product.status === 'Launched' && (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="h-8 gap-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                        onClick={() => onUnlaunchClick(product)}
+                                                        disabled={isUnlaunching && unlaunchTarget?.product_id === product.product_id}
+                                                    >
+                                                        {isUnlaunching && unlaunchTarget?.product_id === product.product_id ? (
+                                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                                        ) : (
+                                                            <RotateCcw className="h-3 w-3" />
+                                                        )}
+                                                        Undo
+                                                    </Button>
+                                                )}
+
+                                                <Button variant="ghost" size="sm" asChild>
+                                                    <Link href={`/products/${product.product_id}`}>View</Link>
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>
+
+                                        {/* Drill-down row */}
+                                        {isExpanded && (
+                                            <TableRow key={`${product.product_id}-drill`} className="bg-muted/30 hover:bg-muted/30">
+                                                <TableCell colSpan={10} className="py-3 px-6">
+                                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                                        <div>
+                                                            <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-0.5">Sales Channel</p>
+                                                            <p className="font-medium">{product.sales_channel || '—'}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-0.5">Category</p>
+                                                            <p className="font-medium">{product.category || '—'}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-0.5">Go-Live Date</p>
+                                                            <p className="font-medium">{product.go_live_date || '—'}</p>
+                                                        </div>
+                                                        <div className="flex items-end">
+                                                            <Button size="sm" variant="outline" asChild>
+                                                                <Link href={`/products/${product.product_id}`}>View Full Details →</Link>
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </React.Fragment>
                                 )
                             })
                         )}

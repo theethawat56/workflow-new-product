@@ -16,7 +16,7 @@ import {
     TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
-import { Sun, Calendar, BarChart3, TrendingUp, DollarSign, Package, AlertCircle } from "lucide-react"
+import { Sun, Calendar, BarChart3, TrendingUp, TrendingDown, DollarSign, Package, AlertCircle, Activity } from "lucide-react"
 
 // Types matching the user's description
 interface TargetDashboardProps {
@@ -84,32 +84,53 @@ export function TargetDashboard({ salesData, productsData }: TargetDashboardProp
         let totalRevenue = 0
         let totalUnits = 0
 
-        // Daily aggregation for the current month
+        // Per-month GP tracking (index 0=JAN, 1=FEB, 2=MAR, 3=APR)
+        const monthlyGP = [0, 0, 0, 0]
+        const monthlyUnits = [0, 0, 0, 0]
+        const monthlyRevenue = [0, 0, 0, 0]
+
         let currentMonthGP = 0
         let currentMonthUnits = 0
-        const now = new Date()
-        const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-        const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+
+        // Per-SKU aggregation
+        const skuStats: Record<string, {
+            sku: string
+            productName: string
+            category: string
+            launchMonth: string
+            salesChannel: string
+            costPerUnit: number
+            gp: number
+            revenue: number
+            units: number
+            gpPct: number
+        }> = {}
+
+        // Build SKU → product name/category/channel lookup from productsData
+        const skuMeta: Record<string, { productName: string; category: string; launchMonth: string; salesChannel: string }> = {}
+        productsData.forEach((p: any) => {
+            const k = p.sku_code?.toLowerCase().trim()
+            if (k) skuMeta[k] = {
+                productName: p.product_name || p.sku_code || k,
+                category: p.category || "—",
+                launchMonth: p.launch_month || "—",
+                salesChannel: p.sales_channel || "—",
+            }
+        })
 
         salesData.forEach(sale => {
-            const saleDate = new Date(sale.Date) // format: "2026-01-01" or as provided by Sale_All
+            const saleDate = new Date(sale.Date)
             if (isNaN(saleDate.getTime())) return
 
-            // Global Filter (JAN-APR)
+            // Global Filter (JAN-APR 2026)
             if (saleDate >= start && saleDate <= end) {
                 const sku = String(sale.SKU || "").toLowerCase().trim()
-
-                // Only count if it's a "New/Launched" SKU
-                // User said: "focus on sku have status launched"
                 if (!launchedSkus.has(sku)) return
 
                 const units = parseFloat(String(sale["Units Sold"] || "0").replace(/,/g, "")) || 0
                 const revenue = parseFloat(String(sale["Revenue"] || "0").replace(/,/g, "")) || 0
 
-                // --- GP Formula ---
-                // Net Revenue = Revenue / 1.07
-                // After Fees = Net Revenue * 0.77
-                // GP = After Fees - (COGS * Units)
+                // GP Formula: Net Rev / 1.07 * 0.77 - COGS * Units
                 const netRevenue = revenue / 1.07
                 const afterFees = netRevenue * 0.77
                 const cogs = (skuCosts[sku] || 0) * units
@@ -119,10 +140,32 @@ export function TargetDashboard({ salesData, productsData }: TargetDashboardProp
                 totalRevenue += revenue
                 totalUnits += units
 
-                // Current Month Stats
-                // Note: currentMonthIndex is 0-3 (JAN-APR). We should match the configured month.
-                // If dashboard is in "JAN", we count JAN sales.
-                const configMonth = currentMonthConfig.id - 1 // 0-based
+                // Per-SKU accumulation
+                if (!skuStats[sku]) {
+                    const meta = skuMeta[sku] || { productName: sku, category: "—", launchMonth: "—", salesChannel: "—" }
+                    skuStats[sku] = {
+                        sku,
+                        productName: meta.productName,
+                        category: meta.category,
+                        launchMonth: meta.launchMonth,
+                        salesChannel: meta.salesChannel,
+                        costPerUnit: skuCosts[sku] || 0,
+                        gp: 0, revenue: 0, units: 0, gpPct: 0,
+                    }
+                }
+                skuStats[sku].gp += gp
+                skuStats[sku].revenue += revenue
+                skuStats[sku].units += units
+
+                // Map sale month to MONTHS_CONFIG index (JAN=0, FEB=1, MAR=2, APR=3)
+                const configIndex = saleDate.getMonth()
+                if (configIndex >= 0 && configIndex <= 3) {
+                    monthlyGP[configIndex] += gp
+                    monthlyUnits[configIndex] += units
+                    monthlyRevenue[configIndex] += revenue
+                }
+
+                const configMonth = currentMonthConfig.id - 1
                 if (saleDate.getMonth() === configMonth && saleDate.getFullYear() === 2026) {
                     currentMonthGP += gp
                     currentMonthUnits += units
@@ -130,12 +173,24 @@ export function TargetDashboard({ salesData, productsData }: TargetDashboardProp
             }
         })
 
+        // Calculate GP % per SKU
+        Object.values(skuStats).forEach(s => {
+            s.gpPct = s.revenue > 0 ? (s.gp / (s.revenue / 1.07)) * 100 : 0
+        })
+
+        // Sort by GP descending
+        const skuBreakdown = Object.values(skuStats).sort((a, b) => b.gp - a.gp)
+
         return {
             totalGP,
             totalRevenue,
             totalUnits,
             currentMonthGP,
-            currentMonthUnits
+            currentMonthUnits,
+            monthlyGP,
+            monthlyUnits,
+            monthlyRevenue,
+            skuBreakdown,
         }
     }, [salesData, productsData, currentMonthConfig])
 
@@ -296,44 +351,6 @@ export function TargetDashboard({ salesData, productsData }: TargetDashboardProp
                 ))}
             </div>
 
-            {/* Morning Questions */}
-            <Card className="bg-muted/50">
-                <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                        <Sun className="h-4 w-4 text-orange-500" />
-                        Morning Check-in
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <ul className="list-disc list-inside space-y-1 text-sm">
-                        <li>Any SKU needs to be launched or followed up today?</li>
-                        <li>How did yesterday's units compare to the daily model?</li>
-                        <li>Is there any gap to action before the end of the week?</li>
-                    </ul>
-                </CardContent>
-            </Card>
-
-            {/* Daily Checklist (LocalStorage logic to be added) */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="text-base">Daily Protocol</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="space-y-3">
-                        {["Check Sales Dashboard", "Review Ad Spend", "Check Inventory Levels", "Review Customer/KOL Feedback", "Update Team Task Status"].map((item, i) => (
-                            <div key={i} className="flex items-center space-x-2">
-                                <Checkbox id={`task-${i}`} />
-                                <label
-                                    htmlFor={`task-${i}`}
-                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                >
-                                    {item} (Placeholder)
-                                </label>
-                            </div>
-                        ))}
-                    </div>
-                </CardContent>
-            </Card>
         </div>
     )
 
@@ -479,6 +496,289 @@ export function TargetDashboard({ salesData, productsData }: TargetDashboardProp
         </div>
     )
 
+    // --- Section 4: GP Breakdown ---
+    const renderGPBreakdown = () => {
+        const totalModelGP = MONTHS_CONFIG.reduce((s, m) => s + m.gp, 0)
+        const totalActualGP = stats.totalGP
+        const overallPct = totalModelGP > 0 ? Math.round((totalActualGP / totalModelGP) * 100) : 0
+
+        const getHealthLevel = (pct: number) => {
+            if (pct >= 80) return { label: "HIGH", color: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200" }
+            if (pct >= 40) return { label: "ON TRACK", color: "bg-amber-400", text: "text-amber-700", bg: "bg-amber-50", border: "border-amber-200" }
+            return { label: "LOW", color: "bg-red-500", text: "text-red-700", bg: "bg-red-50", border: "border-red-200" }
+        }
+
+        return (
+            <div className="space-y-6">
+                {/* Overall GP Health Banner */}
+                <div className={cn(
+                    "rounded-xl border-2 p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4",
+                    getHealthLevel(overallPct).bg,
+                    getHealthLevel(overallPct).border
+                )}>
+                    <div className="flex items-center gap-3">
+                        <Activity className={cn("h-6 w-6", getHealthLevel(overallPct).text)} />
+                        <div>
+                            <p className="font-semibold text-sm">Overall GP Achievement (JAN–APR 2026)</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                                Actual {formatCurrency(totalActualGP)} vs Model {formatCurrency(totalModelGP)}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <div className={cn("text-3xl font-bold", getHealthLevel(overallPct).text)}>{overallPct}%</div>
+                        <Badge className={cn("text-xs", getHealthLevel(overallPct).text, getHealthLevel(overallPct).bg, getHealthLevel(overallPct).border, "border")}>
+                            {getHealthLevel(overallPct).label}
+                        </Badge>
+                    </div>
+                </div>
+
+                {/* Month-by-Month GP Breakdown Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {MONTHS_CONFIG.map((m, idx) => {
+                        const actualGP = stats.monthlyGP[idx] ?? 0
+                        const pct = m.gp > 0 ? Math.round((actualGP / m.gp) * 100) : 0
+                        const health = getHealthLevel(pct)
+                        const efficiency = m.budget > 0 ? ((actualGP / m.budget) * 100).toFixed(1) : "0.0"
+                        const modelEfficiency = m.budget > 0 ? ((m.gp / m.budget) * 100).toFixed(1) : "0.0"
+                        const gpPerSku = m.skus > 0 ? m.gp / m.skus : 0
+                        const actualGpPerSku = m.skus > 0 ? actualGP / m.skus : 0
+                        const isCurrent = idx === currentMonthIndex
+                        return (
+                            <Card key={m.id} className={cn(
+                                "border-2 transition-all",
+                                isCurrent ? "border-yellow-400 ring-2 ring-yellow-400/20" : health.border
+                            )}>
+                                <CardHeader className="pb-2">
+                                    <div className="flex items-center justify-between">
+                                        <CardTitle className="text-base font-bold">{m.name}</CardTitle>
+                                        <Badge variant="outline" className={cn("text-[10px] font-semibold", health.text, health.bg, health.border, "border")}>
+                                            {health.label}
+                                        </Badge>
+                                    </div>
+                                    <CardDescription className="text-[11px]">{m.skus} SKUs · {m.units} units planned</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    {/* GP Progress */}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-muted-foreground">GP vs Model</span>
+                                            <span className={cn("font-semibold", health.text)}>{pct}%</span>
+                                        </div>
+                                        <div className="h-2 rounded-full bg-muted overflow-hidden">
+                                            <div
+                                                className={cn("h-full rounded-full transition-all", health.color)}
+                                                style={{ width: `${Math.min(pct, 100)}%` }}
+                                            />
+                                        </div>
+                                        <div className="flex justify-between text-[10px] text-muted-foreground">
+                                            <span>Actual: {formatCurrency(actualGP)}</span>
+                                            <span>Model: {formatCurrency(m.gp)}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Divider */}
+                                    <div className="border-t pt-2 space-y-1.5">
+                                        {/* GP/Invest Efficiency */}
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-muted-foreground">GP / Invest Efficiency</span>
+                                            <div className="flex items-center gap-1">
+                                                {parseFloat(efficiency) >= parseFloat(modelEfficiency)
+                                                    ? <TrendingUp className="h-3 w-3 text-emerald-600" />
+                                                    : <TrendingDown className="h-3 w-3 text-red-500" />
+                                                }
+                                                <span className={cn("font-semibold", parseFloat(efficiency) >= parseFloat(modelEfficiency) ? "text-emerald-600" : "text-red-500")}>
+                                                    {efficiency}%
+                                                </span>
+                                                <span className="text-muted-foreground">/ {modelEfficiency}% model</span>
+                                            </div>
+                                        </div>
+
+                                        {/* GP per SKU */}
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-muted-foreground">GP / SKU</span>
+                                            <div className="text-right">
+                                                <span className="font-semibold">{formatCurrency(actualGpPerSku)}</span>
+                                                <span className="text-muted-foreground ml-1">actual</span>
+                                                <span className="text-muted-foreground"> / {formatCurrency(gpPerSku)} model</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )
+                    })}
+                </div>
+
+                {/* Summary Table */}
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">GP Breakdown Summary</CardTitle>
+                        <CardDescription className="text-xs">Actual vs Model — Investment Efficiency per Month</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Month</TableHead>
+                                    <TableHead className="text-right">GP Model</TableHead>
+                                    <TableHead className="text-right">Actual GP</TableHead>
+                                    <TableHead className="text-right">Achievement</TableHead>
+                                    <TableHead className="text-right">GP/Invest</TableHead>
+                                    <TableHead className="text-right">GP/SKU</TableHead>
+                                    <TableHead className="text-center">Health</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {MONTHS_CONFIG.map((m, idx) => {
+                                    const actualGP = stats.monthlyGP[idx] ?? 0
+                                    const pct = m.gp > 0 ? Math.round((actualGP / m.gp) * 100) : 0
+                                    const health = getHealthLevel(pct)
+                                    const efficiency = m.budget > 0 ? ((actualGP / m.budget) * 100).toFixed(1) : "0.0"
+                                    const modelEfficiency = m.budget > 0 ? ((m.gp / m.budget) * 100).toFixed(1) : "0.0"
+                                    const actualGpPerSku = m.skus > 0 ? actualGP / m.skus : 0
+                                    const modelGpPerSku = m.skus > 0 ? m.gp / m.skus : 0
+                                    return (
+                                        <TableRow key={m.id} className={idx === currentMonthIndex ? "bg-yellow-50" : ""}>
+                                            <TableCell className="font-semibold">
+                                                {m.name}
+                                                {idx === currentMonthIndex && <Badge variant="outline" className="ml-2 text-[9px] py-0 h-4 bg-yellow-100 text-yellow-800 border-yellow-300">NOW</Badge>}
+                                            </TableCell>
+                                            <TableCell className="text-right text-muted-foreground">{formatCurrency(m.gp)}</TableCell>
+                                            <TableCell className="text-right font-medium">{formatCurrency(actualGP)}</TableCell>
+                                            <TableCell className="text-right">
+                                                <span className={cn("font-bold", health.text)}>{pct}%</span>
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <div className="flex items-center justify-end gap-1">
+                                                    {parseFloat(efficiency) >= parseFloat(modelEfficiency)
+                                                        ? <TrendingUp className="h-3 w-3 text-emerald-600" />
+                                                        : <TrendingDown className="h-3 w-3 text-red-500" />
+                                                    }
+                                                    <span className={cn("text-xs font-medium", parseFloat(efficiency) >= parseFloat(modelEfficiency) ? "text-emerald-600" : "text-red-500")}>
+                                                        {efficiency}%
+                                                    </span>
+                                                    <span className="text-[10px] text-muted-foreground">/{modelEfficiency}%</span>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="text-right text-xs">
+                                                <span className="font-medium">{formatCurrency(actualGpPerSku)}</span>
+                                                <span className="text-muted-foreground"> / {formatCurrency(modelGpPerSku)}</span>
+                                            </TableCell>
+                                            <TableCell className="text-center">
+                                                <Badge className={cn("text-[10px]", health.text, health.bg, health.border, "border")}>{health.label}</Badge>
+                                            </TableCell>
+                                        </TableRow>
+                                    )
+                                })}
+                                {/* Total Row */}
+                                <TableRow className="border-t-2 font-semibold bg-muted/30">
+                                    <TableCell>Total</TableCell>
+                                    <TableCell className="text-right text-muted-foreground">{formatCurrency(totalModelGP)}</TableCell>
+                                    <TableCell className="text-right">{formatCurrency(totalActualGP)}</TableCell>
+                                    <TableCell className="text-right">
+                                        <span className={cn("font-bold", getHealthLevel(overallPct).text)}>{overallPct}%</span>
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                        <span className="text-xs font-medium">
+                                            {totalModelGP > 0 ? ((totalActualGP / MONTHS_CONFIG.reduce((s, m) => s + m.budget, 0)) * 100).toFixed(1) : "0.0"}%
+                                        </span>
+                                    </TableCell>
+                                    <TableCell className="text-right text-xs">
+                                        <span className="text-muted-foreground">—</span>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                        <Badge className={cn("text-[10px]", getHealthLevel(overallPct).text, getHealthLevel(overallPct).bg, getHealthLevel(overallPct).border, "border")}>
+                                            {getHealthLevel(overallPct).label}
+                                        </Badge>
+                                    </TableCell>
+                                </TableRow>
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
+
+                {/* Per-Product Breakdown Table */}
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                            <Package className="h-4 w-4" />
+                            Per-Product GP Breakdown
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                            Each launched SKU — Actual GP, Revenue &amp; Margin (JAN–APR 2026), sorted High → Low
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {stats.skuBreakdown.length === 0 ? (
+                            <div className="text-center py-8 text-muted-foreground text-sm">
+                                No launched SKUs with sales data found for JAN–APR 2026.
+                            </div>
+                        ) : (
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="w-[36px]">#</TableHead>
+                                        <TableHead>Product Name</TableHead>
+                                        <TableHead>SKU</TableHead>
+                                        <TableHead>Category</TableHead>
+                                        <TableHead>Launch</TableHead>
+                                        <TableHead>Channel</TableHead>
+                                        <TableHead className="text-right">Revenue</TableHead>
+                                        <TableHead className="text-right">Units</TableHead>
+                                        <TableHead className="text-right">Actual GP</TableHead>
+                                        <TableHead className="text-right">GP Margin</TableHead>
+                                        <TableHead className="text-center">Health</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {stats.skuBreakdown.map((s, idx) => {
+                                        const marginPct = s.gpPct
+                                        const health = marginPct >= 50
+                                            ? { label: "HIGH", text: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200", barColor: "bg-emerald-500" }
+                                            : marginPct >= 30
+                                                ? { label: "ON TRACK", text: "text-amber-700", bg: "bg-amber-50", border: "border-amber-200", barColor: "bg-amber-400" }
+                                                : { label: "LOW", text: "text-red-700", bg: "bg-red-50", border: "border-red-200", barColor: "bg-red-500" }
+                                        const gpBar = Math.min(Math.max(marginPct, 0), 100)
+                                        return (
+                                            <TableRow key={s.sku} className={idx % 2 === 0 ? "" : "bg-muted/20"}>
+                                                <TableCell className="text-muted-foreground text-xs font-mono">{idx + 1}</TableCell>
+                                                <TableCell className="font-medium">
+                                                    <div className="max-w-[160px] truncate" title={s.productName}>{s.productName}</div>
+                                                </TableCell>
+                                                <TableCell className="font-mono text-xs uppercase text-muted-foreground">{s.sku}</TableCell>
+                                                <TableCell className="text-xs">{s.category}</TableCell>
+                                                <TableCell className="text-xs">{s.launchMonth}</TableCell>
+                                                <TableCell className="text-xs">{s.salesChannel}</TableCell>
+                                                <TableCell className="text-right text-xs">{formatCurrency(s.revenue)}</TableCell>
+                                                <TableCell className="text-right text-xs">{s.units.toLocaleString()}</TableCell>
+                                                <TableCell className="text-right font-semibold">{formatCurrency(s.gp)}</TableCell>
+                                                <TableCell className="text-right">
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <div className="w-12 h-1.5 rounded-full bg-muted overflow-hidden">
+                                                            <div className={cn("h-full rounded-full", health.barColor)} style={{ width: `${gpBar}%` }} />
+                                                        </div>
+                                                        <span className={cn("text-xs font-semibold", health.text)}>
+                                                            {marginPct.toFixed(1)}%
+                                                        </span>
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell className="text-center">
+                                                    <Badge className={cn("text-[10px]", health.text, health.bg, health.border, "border")}>
+                                                        {health.label}
+                                                    </Badge>
+                                                </TableCell>
+                                            </TableRow>
+                                        )
+                                    })}
+                                </TableBody>
+                            </Table>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+        )
+    }
 
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-8">
@@ -537,12 +837,17 @@ export function TargetDashboard({ salesData, productsData }: TargetDashboardProp
                 {renderLaunchRoadmap()}
             </section>
 
-            {/* Section 3: Variables */}
+            {/* Section 4: GP Breakdown */}
             <section className="space-y-4 pt-6 border-t">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                    <AlertCircle className="h-5 w-5" /> 3. Key Variables
-                </h2>
-                {renderKeyVariables()}
+                <div>
+                    <h2 className="text-xl font-semibold flex items-center gap-2">
+                        <Activity className="h-5 w-5" /> 4. GP Breakdown Analysis
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        Month-by-month GP health — High / On Track / Low vs model targets
+                    </p>
+                </div>
+                {renderGPBreakdown()}
             </section>
         </div>
     )
