@@ -19,7 +19,7 @@ import {
     Pie,
     Cell
 } from "recharts"
-import { RefreshCw, ShoppingCart, DollarSign, Rocket, Filter, Calendar as CalendarIcon } from "lucide-react"
+import { RefreshCw, ShoppingCart, DollarSign, Rocket, Filter, Calendar as CalendarIcon, Search, X } from "lucide-react"
 import { useRouter } from "next/navigation"
 import {
     startOfDay,
@@ -75,6 +75,7 @@ export function SalesDashboard({ initialData, launchedProducts, products }: { in
     const [categoryFilter, setCategoryFilter] = useState("ALL")
     const [subCategoryFilter, setSubCategoryFilter] = useState("ALL")
     const [periodFilter, setPeriodFilter] = useState("THIS_YEAR")
+    const [searchQuery, setSearchQuery] = useState("")
 
     const currentYear = new Date().getFullYear()
 
@@ -291,7 +292,7 @@ export function SalesDashboard({ initialData, launchedProducts, products }: { in
                 orders: p.orders.size
             }))
             .sort((a, b) => b.revenue - a.revenue)
-            .slice(0, 50) // Limit to top 50 for performance
+            .slice(0, 200) // Limit for performance
     }, [filteredData])
 
     // Extract unique options for filters
@@ -391,6 +392,31 @@ export function SalesDashboard({ initialData, launchedProducts, products }: { in
                             {subCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
                     </Select>
+                </div>
+
+                {/* Product Name Search */}
+                <div className="space-y-2">
+                    <span className="text-sm font-medium flex items-center gap-1">
+                        <Search className="w-3 h-3" /> Search Product
+                    </span>
+                    <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            placeholder="Name or SKU..."
+                            className="h-10 w-[200px] rounded-md border border-input bg-background pl-8 pr-8 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => setSearchQuery("")}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            >
+                                <X className="h-3.5 w-3.5" />
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 <div className="ml-auto text-sm text-muted-foreground pb-2">
@@ -529,7 +555,12 @@ export function SalesDashboard({ initialData, launchedProducts, products }: { in
             <Card className="col-span-full">
                 <CardHeader>
                     <CardTitle>Product Performance</CardTitle>
-                    <CardDescription>Detailed sales breakdown by product (Top 50)</CardDescription>
+                    <CardDescription>
+                        {searchQuery
+                            ? `Searching "${searchQuery}" — ${productPerformance.filter(p => p.name?.toLowerCase().includes(searchQuery.toLowerCase()) || p.sku?.toLowerCase().includes(searchQuery.toLowerCase())).length} result(s)`
+                            : `Detailed sales breakdown by product (Top 200)`
+                        }
+                    </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border">
@@ -544,32 +575,41 @@ export function SalesDashboard({ initialData, launchedProducts, products }: { in
                                 </tr>
                             </thead>
                             <tbody className="[&_tr:last-child]:border-0">
-                                {productPerformance.map((product) => (
-                                    <tr key={product.sku} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                                        <td className="p-4 align-middle font-medium">
-                                            <div className="flex flex-col">
-                                                <span className="flex items-center gap-2">
-                                                    {product.name}
-                                                    {product.isNew && (
-                                                        <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-green-100 text-green-800 shadow hover:bg-green-100/80">
-                                                            New
-                                                        </span>
-                                                    )}
-                                                </span>
-                                                <span className="text-xs text-muted-foreground">{product.sku}</span>
-                                            </div>
-                                        </td>
-                                        <td className="p-4 align-middle">
-                                            <div className="flex flex-col">
-                                                <span>{product.category}</span>
-                                                <span className="text-xs text-muted-foreground">{product.sub_category}</span>
-                                            </div>
-                                        </td>
-                                        <td className="p-4 align-middle text-right">{product.orders.toLocaleString()}</td>
-                                        <td className="p-4 align-middle text-right">{product.units.toLocaleString()}</td>
-                                        <td className="p-4 align-middle text-right font-bold">฿{product.revenue.toLocaleString()}</td>
-                                    </tr>
-                                ))}
+                                {productPerformance
+                                    .filter(product => {
+                                        if (!searchQuery) return true
+                                        const q = searchQuery.toLowerCase()
+                                        return (
+                                            product.name?.toLowerCase().includes(q) ||
+                                            product.sku?.toLowerCase().includes(q)
+                                        )
+                                    })
+                                    .map((product) => (
+                                        <tr key={product.sku} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                                            <td className="p-4 align-middle font-medium">
+                                                <div className="flex flex-col">
+                                                    <span className="flex items-center gap-2">
+                                                        {product.name}
+                                                        {product.isNew && (
+                                                            <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-green-100 text-green-800 shadow hover:bg-green-100/80">
+                                                                New
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                    <span className="text-xs text-muted-foreground">{product.sku}</span>
+                                                </div>
+                                            </td>
+                                            <td className="p-4 align-middle">
+                                                <div className="flex flex-col">
+                                                    <span>{product.category}</span>
+                                                    <span className="text-xs text-muted-foreground">{product.sub_category}</span>
+                                                </div>
+                                            </td>
+                                            <td className="p-4 align-middle text-right">{product.orders.toLocaleString()}</td>
+                                            <td className="p-4 align-middle text-right">{product.units.toLocaleString()}</td>
+                                            <td className="p-4 align-middle text-right font-bold">฿{product.revenue.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
                             </tbody>
                         </table>
                     </div>
