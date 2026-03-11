@@ -10,21 +10,28 @@ const openai = new OpenAI({
 
 // Short, token-efficient system prompt for trade fair use
 const SYSTEM_PROMPT = `You are a fast product capture assistant for sourcing at trade fairs.
-Your goal: collect just 3 things — product name, price (THB), and MOQ. That's it.
-If user sends an image/namecard, extract as many fields as possible from it.
-Auto-generate SKU from brand+category prefix. Ask only 1 question at a time.
+Your goal: collect 5 things in order:
+1. product_image (photo of product) — required
+2. contact_image (namecard/supplier contact) — required
+3. product name
+4. price (THB)
+5. MOQ
+Do NOT ask for confirmation until BOTH images have been received (product_image_url and contact_image_url are set).
+If user sends an image and product_image_url is empty → it's the product image.
+If user sends an image and product_image_url is already set → it's the contact/namecard image.
+Extract as much info as possible from each image.
+Ask only 1 question at a time. Keep messages short (1-2 lines).
 Respond in JSON only:
 {"action":"ask"|"confirm"|"save"|"cancel","message":"<reply in Thai/English>","extracted":{},"draft":{}}
 Rules:
-- action=ask: missing a required field
-- action=confirm: all 3 fields ready, show summary and ask yes/no
+- action=ask: still missing something (image or field)
+- action=confirm: both images received + name+price+MOQ known → show summary, ask yes/no
 - action=save: user confirmed yes
 - action=cancel: user said ยกเลิก/cancel
-- Keep messages short (1-2 lines max)
 - If supplier contact or booth number mentioned, save in notes`;
 
-// Required fields only (minimal for trade fair speed)
-const REQUIRED_FIELDS: (keyof ProductDraft)[] = ['product_name', 'price', 'moq'];
+// Required fields (both images + 3 data fields)
+const REQUIRED_FIELDS: (keyof ProductDraft)[] = ['product_image_url', 'contact_image_url', 'product_name', 'price', 'moq'];
 
 export class LineProductAgent {
     userId: string;
@@ -41,7 +48,16 @@ export class LineProductAgent {
             } else if (event.message.type === 'image') {
                 await this.handleImage(event.message.id, event.replyToken);
             } else {
-                await replyMessage(event.replyToken, [{ type: 'text', text: 'ส่งรูปสินค้าหรือนามบัตร หรือพิมพ์ชื่อสินค้า+ราคา+MOQ ได้เลยครับ 📸' }]);
+                // Check what images we still need and guide user
+                const session = getSession(this.userId);
+                const draft = session.pendingProduct;
+                if (!draft.product_image_url) {
+                    await replyMessage(event.replyToken, [{ type: 'text', text: 'กรุณาส่งรูปสินค้าก่อนเลยครับ 📸' }]);
+                } else if (!draft.contact_image_url) {
+                    await replyMessage(event.replyToken, [{ type: 'text', text: 'ได้รูปสินค้าแล้ว ขอรูปนามบัตร/ช่องทางติดต่อ Supplier ด้วยครับ 📇' }]);
+                } else {
+                    await replyMessage(event.replyToken, [{ type: 'text', text: 'ส่งรูปสินค้าหรือนามบัตรได้เลยครับ 📸' }]);
+                }
             }
         } catch (error) {
             console.error('Error handling event:', error);
@@ -167,11 +183,15 @@ export class LineProductAgent {
         const buffer = await getContent(messageId);
         const base64 = buffer.toString('base64');
 
+        // Determine which image slot to fill
+        const isProductImage = !session.pendingProduct.product_image_url;
+        const imageLabel = isProductImage ? 'product' : 'contact';
+
         // Upload image to Google Drive and save URL in draft
         try {
             const drive = await getDriveClient();
             const folderId = '13fcUC1dRmeCBEfYaCP_vJW3bkIGWNxqg';
-            const fileName = 'line_product_' + Date.now() + '.jpg';
+            const fileName = 'line_' + imageLabel + '_' + Date.now() + '.jpg';
             const { Readable } = await import('stream');
             const driveRes = await drive.files.create({
                 requestBody: { name: fileName, parents: [folderId] },
@@ -187,11 +207,15 @@ export class LineProductAgent {
                     requestBody: { role: 'reader', type: 'anyone' },
                 });
                 const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://work-flow-new-product.vercel.app';
-                session.pendingProduct.product_image_url = baseUrl + '/api/image?fileId=' + fileId;
+                const imageUrl = baseUrl + '/api/image?fileId=' + fileId;
+                if (isProductImage) {
+                    session.pendingProduct.product_image_url = imageUrl;
+                } else {
+                    session.pendingProduct.contact_image_url = imageUrl;
+                }
             }
         } catch (uploadErr) {
             console.error('Failed to upload image to Drive:', uploadErr);
-            // Don't block the flow — just skip the image URL
         }
 
         const decision = await this.callAI(session, '', base64);
@@ -233,6 +257,7 @@ export class LineProductAgent {
             source_fair: draft.source_fair || '',
             source_booth: draft.source_booth || '',
             product_image_url: draft.product_image_url || '',
+            contact_image_url: draft.contact_image_url || '',
             created_by: 'line:' + this.userId,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),

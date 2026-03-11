@@ -13,6 +13,7 @@ export interface ProductDraft {
     source_booth?: string
     notes?: string
     product_image_url?: string  // uploaded from Line image/namecard
+    contact_image_url?: string  // supplier namecard/contact image
 }
 
 export interface LineSession {
