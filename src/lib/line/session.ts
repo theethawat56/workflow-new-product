@@ -1,7 +1,6 @@
 /**
  * Persistent session store backed by Google Sheets.
- * Replaces the in-memory Map which doesn't work on Vercel serverless.
- * Each LINE userId gets one row in the `line_sessions` sheet.
+ * Auto-creates the `line_sessions` sheet if it doesn't exist.
  */
 
 export interface ProductDraft {
@@ -18,8 +17,8 @@ export interface ProductDraft {
     source_fair?: string
     source_booth?: string
     notes?: string
-    product_image_url?: string  // uploaded from Line product image
-    contact_image_url?: string  // uploaded from Line namecard/contact image
+    product_image_url?: string
+    contact_image_url?: string
 }
 
 export interface LineSession {
@@ -30,11 +29,11 @@ export interface LineSession {
     lastActivity: Date
 }
 
-const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const SESSION_TTL_MS = 30 * 60 * 1000;
+const SHEET_NAME = 'line_sessions';
+const HEADERS = ['user_id', 'state', 'pending_product', 'conversation_history', 'last_activity'];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function makeEmptySession(userId: string): LineSession {
+function makeEmpty(userId: string): LineSession {
     return {
         userId,
         state: 'idle',
@@ -44,32 +43,117 @@ function makeEmptySession(userId: string): LineSession {
     };
 }
 
-async function getAdapter() {
-    const [{ findAll, create, deleteRow }, { getSheetsClient, getSpreadsheetId }] = await Promise.all([
-        import('@/lib/db/adapter'),
-        import('@/lib/google/sheets'),
-    ]);
-    return { findAll, create, deleteRow, getSheetsClient, getSpreadsheetId };
+// ─── Auto-ensure the sheet exists with headers ─────────────────────────────
+
+async function ensureSheet(): Promise<boolean> {
+    try {
+        const { getSheetsClient, getSpreadsheetId } = await import('@/lib/google/sheets');
+        const sheets = await getSheetsClient();
+        const spreadsheetId = (await getSpreadsheetId()) as string;
+
+        const meta = await sheets.spreadsheets.get({ spreadsheetId });
+        const exists = meta.data.sheets?.some(s => s.properties?.title === SHEET_NAME);
+
+        if (!exists) {
+            console.log('[session] Creating line_sessions sheet...');
+            await sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                requestBody: {
+                    requests: [{ addSheet: { properties: { title: SHEET_NAME } } }]
+                }
+            });
+            await sheets.spreadsheets.values.update({
+                spreadsheetId,
+                range: `${SHEET_NAME}!A1:E1`,
+                valueInputOption: 'RAW',
+                requestBody: { values: [HEADERS] }
+            });
+            console.log('[session] line_sessions sheet created.');
+        }
+        return true;
+    } catch (err) {
+        console.error('[session] ensureSheet error:', err);
+        return false;
+    }
 }
 
-// ─── Public API (all async) ────────────────────────────────────────────────────
+// ─── Low-level read all rows ────────────────────────────────────────────────
+
+async function readAllRows(): Promise<any[]> {
+    const { getSheetsClient, getSpreadsheetId } = await import('@/lib/google/sheets');
+    const sheets = await getSheetsClient();
+    const spreadsheetId = (await getSpreadsheetId()) as string;
+
+    const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${SHEET_NAME}!A:E`,
+    });
+
+    const rows = res.data.values;
+    if (!rows || rows.length < 2) return [];
+    const headers = rows[0];
+    return rows.slice(1).map(row => {
+        const obj: any = {};
+        headers.forEach((h: string, i: number) => { obj[h] = row[i] || ''; });
+        return obj;
+    });
+}
+
+// ─── Low-level write session row ────────────────────────────────────────────
+
+async function writeRow(session: LineSession): Promise<void> {
+    const { getSheetsClient, getSpreadsheetId } = await import('@/lib/google/sheets');
+    const sheets = await getSheetsClient();
+    const spreadsheetId = (await getSpreadsheetId()) as string;
+
+    const rowValues = [
+        session.userId,
+        session.state,
+        JSON.stringify(session.pendingProduct),
+        JSON.stringify(session.conversationHistory.slice(-4)),
+        new Date().toISOString(),
+    ];
+
+    // Find existing row index
+    const all = await readAllRows();
+    const idx = all.findIndex(r => r.user_id === session.userId);
+
+    if (idx >= 0) {
+        // Update row in place (row 2 = idx 0, because row 1 = header)
+        const sheetRow = idx + 2;
+        await sheets.spreadsheets.values.update({
+            spreadsheetId,
+            range: `${SHEET_NAME}!A${sheetRow}:E${sheetRow}`,
+            valueInputOption: 'RAW',
+            requestBody: { values: [rowValues] }
+        });
+    } else {
+        await sheets.spreadsheets.values.append({
+            spreadsheetId,
+            range: `${SHEET_NAME}!A1`,
+            valueInputOption: 'RAW',
+            requestBody: { values: [rowValues] }
+        });
+    }
+}
+
+// ─── Public API ─────────────────────────────────────────────────────────────
 
 export async function getSession(userId: string): Promise<LineSession> {
     try {
-        const { findAll } = await import('@/lib/db/adapter');
-        const rows = await findAll<any>('line_sessions');
-        const row = rows.find((r: any) => r.user_id === userId);
+        await ensureSheet();
+        const rows = await readAllRows();
+        const row = rows.find(r => r.user_id === userId);
 
         if (row) {
             const lastActivity = new Date(row.last_activity);
-            // TTL check
             if (Date.now() - lastActivity.getTime() > SESSION_TTL_MS) {
                 await clearSession(userId);
-                return makeEmptySession(userId);
+                return makeEmpty(userId);
             }
             return {
                 userId,
-                state: row.state || 'idle',
+                state: (row.state as any) || 'idle',
                 pendingProduct: JSON.parse(row.pending_product || '{}'),
                 conversationHistory: JSON.parse(row.conversation_history || '[]'),
                 lastActivity,
@@ -78,27 +162,13 @@ export async function getSession(userId: string): Promise<LineSession> {
     } catch (err) {
         console.error('[session] getSession error:', err);
     }
-    return makeEmptySession(userId);
+    return makeEmpty(userId);
 }
 
 export async function updateSession(userId: string, session: LineSession): Promise<void> {
     try {
-        const { findAll, deleteRow, create } = await import('@/lib/db/adapter');
-        const rows = await findAll<any>('line_sessions');
-        const exists = rows.some((r: any) => r.user_id === userId);
-
-        if (exists) {
-            await deleteRow('line_sessions', 'user_id', userId);
-        }
-
-        await create('line_sessions', {
-            user_id: userId,
-            state: session.state,
-            pending_product: JSON.stringify(session.pendingProduct),
-            // Only keep last 4 messages to save space
-            conversation_history: JSON.stringify(session.conversationHistory.slice(-4)),
-            last_activity: new Date().toISOString(),
-        });
+        await ensureSheet();
+        await writeRow(session);
     } catch (err) {
         console.error('[session] updateSession error:', err);
     }
@@ -106,11 +176,35 @@ export async function updateSession(userId: string, session: LineSession): Promi
 
 export async function clearSession(userId: string): Promise<void> {
     try {
-        const { findAll, deleteRow } = await import('@/lib/db/adapter');
-        const rows = await findAll<any>('line_sessions');
-        const exists = rows.some((r: any) => r.user_id === userId);
-        if (exists) {
-            await deleteRow('line_sessions', 'user_id', userId);
+        const { getSheetsClient, getSpreadsheetId } = await import('@/lib/google/sheets');
+        const sheets = await getSheetsClient();
+        const spreadsheetId = (await getSpreadsheetId()) as string;
+
+        const all = await readAllRows();
+        const idx = all.findIndex(r => r.user_id === userId);
+        if (idx < 0) return;
+
+        const sheetRow = idx + 2; // +1 for header, +1 for 1-based index
+        const meta = await sheets.spreadsheets.get({ spreadsheetId });
+        const sheet = meta.data.sheets?.find(s => s.properties?.title === SHEET_NAME);
+        const sheetId = sheet?.properties?.sheetId;
+
+        if (typeof sheetId === 'number') {
+            await sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                requestBody: {
+                    requests: [{
+                        deleteDimension: {
+                            range: {
+                                sheetId,
+                                dimension: 'ROWS',
+                                startIndex: sheetRow - 1,
+                                endIndex: sheetRow,
+                            }
+                        }
+                    }]
+                }
+            });
         }
     } catch (err) {
         console.error('[session] clearSession error:', err);
