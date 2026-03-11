@@ -197,6 +197,16 @@ export const SHEETS_CONFIG = {
             "Safety Stock pcs",
             "Day inventory outstanding",
         ]
+    },
+    line_sessions: {
+        name: "line_sessions",
+        headers: [
+            "user_id",
+            "state",
+            "pending_product",
+            "conversation_history",
+            "last_activity",
+        ]
     }
 } as const
 

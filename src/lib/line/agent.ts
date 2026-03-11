@@ -49,7 +49,7 @@ export class LineProductAgent {
                 await this.handleImage(event.message.id, event.replyToken);
             } else {
                 // Check what images we still need and guide user
-                const session = getSession(this.userId);
+                const session = await getSession(this.userId);
                 const draft = session.pendingProduct;
                 if (!draft.product_image_url) {
                     await replyMessage(event.replyToken, [{ type: 'text', text: 'กรุณาส่งรูปสินค้าก่อนเลยครับ 📸' }]);
@@ -136,7 +136,7 @@ export class LineProductAgent {
         }
 
         if (decision.action === 'cancel') {
-            clearSession(this.userId);
+            await clearSession(this.userId);
             await replyMessage(replyToken, [{ type: 'text', text: decision.message || 'ยกเลิกแล้วครับ ✌️' }]);
             return;
         }
@@ -144,7 +144,7 @@ export class LineProductAgent {
         if (decision.action === 'save') {
             try {
                 const sku = await this.saveProduct(session.pendingProduct);
-                clearSession(this.userId);
+                await clearSession(this.userId);
                 const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://work-flow-new-product.vercel.app';
                 await replyMessage(replyToken, [{
                     type: 'text',
@@ -156,7 +156,8 @@ export class LineProductAgent {
             return;
         }
 
-        updateSession(this.userId, {
+        await updateSession(this.userId, {
+            ...session,
             state: decision.action === 'confirm' ? 'confirming' : 'collecting',
             pendingProduct: session.pendingProduct,
             conversationHistory: session.conversationHistory
@@ -166,7 +167,7 @@ export class LineProductAgent {
     }
 
     private async handleMessage(text: string, replyToken: string) {
-        const session = getSession(this.userId);
+        const session = await getSession(this.userId);
 
         // Fair context extraction
         const fairMatch = text.match(/จากงาน\s+(.+)/);
@@ -179,7 +180,7 @@ export class LineProductAgent {
     }
 
     private async handleImage(messageId: string, replyToken: string) {
-        const session = getSession(this.userId);
+        const session = await getSession(this.userId);
         const buffer = await getContent(messageId);
         const base64 = buffer.toString('base64');
 
@@ -217,6 +218,9 @@ export class LineProductAgent {
         } catch (uploadErr) {
             console.error('Failed to upload image to Drive:', uploadErr);
         }
+
+        // Save image URL to session immediately before calling AI
+        await updateSession(this.userId, { ...session, pendingProduct: session.pendingProduct, conversationHistory: session.conversationHistory, state: session.state });
 
         const decision = await this.callAI(session, '', base64);
         await this.applyDecision(decision, session, replyToken);
