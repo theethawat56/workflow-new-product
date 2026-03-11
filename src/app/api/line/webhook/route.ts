@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { LineProductAgent } from '@/lib/line/agent'
 
+// Line requires a 200 response for webhook verification
+export async function GET() {
+    return NextResponse.json({ status: 'ok' }, { status: 200 })
+}
+
 export async function POST(req: NextRequest) {
     try {
         const body = await req.text()
@@ -12,7 +17,9 @@ export async function POST(req: NextRequest) {
 
         if (!channelSecret) {
             console.error("Missing LINE_CHANNEL_SECRET");
-            return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+            // Still return 200 to avoid Line marking the webhook as broken
+            // The bot simply won't work until env var is set
+            return NextResponse.json({ status: 'ok' }, { status: 200 })
         }
 
         const hash = crypto
@@ -45,6 +52,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ status: 'ok' })
     } catch (error) {
         console.error('Error handling webhook POST:', error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+        // Always return 200 to Line — log errors internally
+        return NextResponse.json({ status: 'ok' }, { status: 200 });
     }
 }
