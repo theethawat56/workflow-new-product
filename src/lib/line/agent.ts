@@ -7,51 +7,23 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
-const SYSTEM_PROMPT = `
-You are a product data entry assistant for a sourcing team.
-Your job is to help users add new products to the product catalog through a Line chat.
+// Short, token-efficient system prompt for trade fair use
+const SYSTEM_PROMPT = `You are a fast product capture assistant for sourcing at trade fairs.
+Your goal: collect just 3 things — product name, price (THB), and MOQ. That's it.
+If user sends an image/namecard, extract as many fields as possible from it.
+Auto-generate SKU from brand+category prefix. Ask only 1 question at a time.
+Respond in JSON only:
+{"action":"ask"|"confirm"|"save"|"cancel","message":"<reply in Thai/English>","extracted":{},"draft":{}}
+Rules:
+- action=ask: missing a required field
+- action=confirm: all 3 fields ready, show summary and ask yes/no
+- action=save: user confirmed yes
+- action=cancel: user said ยกเลิก/cancel
+- Keep messages short (1-2 lines max)
+- If supplier contact or booth number mentioned, save in notes`;
 
-## Your behavior:
-- Collect product information conversationally (Thai or English based on user's language)
-- Ask for ONE missing field at a time — do not overwhelm the user
-- Validate as you go (e.g., price must be a number, SKU must be uppercase alphanumeric)
-- When all REQUIRED fields are collected, show a confirmation summary before saving
-- Be concise — this is a chat interface, not a form
-
-## Required fields (must collect all before saving):
-1. product_name — ชื่อสินค้า
-2. brand — แบรนด์
-3. price — ราคาขาย (THB, numbers only)
-4. cost — ต้นทุน (THB, numbers only)
-5. category — หมวดหมู่สินค้า
-6. supplier_name — ชื่อ supplier
-
-## Optional fields (ask after required, or skip if user says "ข้ามได้"):
-- moq — จำนวนสั่งซื้อขั้นต่ำ
-- lead_time_days — ระยะเวลานำส่ง (วัน)
-- notes — หมายเหตุ
-
-## SKU generation:
-- Auto-generate as: {BRAND_PREFIX}-{CATEGORY_PREFIX}-{RANDOM4DIGITS}
-- Example: "NKE-SHOE-4821"
-- Always show generated SKU to user and ask for confirmation
-
-## Response format (always respond as JSON):
-{
-  "action": "ask_field" | "confirm" | "save" | "cancel" | "clarify",
-  "message": "<message to send to user in Thai/English>",
-  "field_asking": "<field name if action=ask_field>",
-  "extracted_fields": { ...any fields extracted from the user's message },
-  "ready_to_save": false,
-  "product_draft": { ...current known fields }
-}
-
-## Rules:
-- NEVER save without user confirmation (action=confirm first, then user says yes)
-- If user says "ยกเลิก" or "cancel" → action=cancel, clear session
-- If user sends a photo → extract product_name, brand, price from image and pre-fill
-- If user says "เพิ่มสินค้าจากงาน [fair name]" → set source_fair context
-`;
+// Required fields only (minimal for trade fair speed)
+const REQUIRED_FIELDS: (keyof ProductDraft)[] = ['product_name', 'price', 'moq'];
 
 export class LineProductAgent {
     userId: string;
@@ -62,91 +34,107 @@ export class LineProductAgent {
 
     async handle(event: any) {
         if (event.type !== 'message') return;
-
         try {
             if (event.message.type === 'text') {
                 await this.handleMessage(event.message.text, event.replyToken);
             } else if (event.message.type === 'image') {
                 await this.handleImage(event.message.id, event.replyToken);
             } else {
-                await replyMessage(event.replyToken, [{ type: 'text', text: 'Sorry, I can only understand text and images right now.' }]);
+                await replyMessage(event.replyToken, [{ type: 'text', text: 'ส่งรูปสินค้าหรือนามบัตร หรือพิมพ์ชื่อสินค้า+ราคา+MOQ ได้เลยครับ 📸' }]);
             }
         } catch (error) {
             console.error('Error handling event:', error);
-            await replyMessage(event.replyToken, [{ type: 'text', text: 'An error occurred while processing your request. Please try again later.' }]);
+            await replyMessage(event.replyToken, [{ type: 'text', text: 'ขออภัย เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้งครับ' }]);
         }
     }
 
-    private async callOpenAI(session: any, userMessage: string, imageBase64?: string, mediaType?: string) {
-        const messages: any[] = [...session.conversationHistory];
+    // Cap history to last 4 messages to save tokens
+    private trimHistory(history: any[]) {
+        return history.slice(-4);
+    }
 
-        if (imageBase64 && mediaType) {
-            messages.push({
-                role: 'user',
-                content: [
-                    { type: 'text', text: userMessage || 'Here is an image, please extract product details from it.' },
-                    { type: 'image_url', image_url: { url: `data:${mediaType};base64,${imageBase64}` } }
-                ]
+    private async callAI(session: any, userMessage: string, imageBase64?: string) {
+        const trimmedHistory = this.trimHistory(session.conversationHistory);
+        const systemWithState = SYSTEM_PROMPT + '\nDraft: ' + JSON.stringify(session.pendingProduct);
+
+        let messages: any[];
+
+        if (imageBase64) {
+            // Vision call — use gpt-4o (required for images)
+            messages = [
+                { role: 'system', content: systemWithState },
+                ...trimmedHistory,
+                {
+                    role: 'user',
+                    content: [
+                        { type: 'text', text: userMessage || 'ดึงข้อมูลสินค้าจากรูปนี้ครับ (ชื่อสินค้า ราคา MOQ contact)' },
+                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}`, detail: 'low' } }
+                    ]
+                }
+            ];
+            const response = await openai.chat.completions.create({
+                model: 'gpt-4o',
+                messages,
+                max_tokens: 400,
+                response_format: { type: 'json_object' }
             });
+            return this.parseResponse(response, session, userMessage || '[Image]');
         } else {
-            messages.push({ role: 'user', content: userMessage || 'Hello' });
-        }
-
-        const systemMessage = {
-            role: 'system',
-            content: SYSTEM_PROMPT + '\nCurrent Draft State: ' + JSON.stringify(session.pendingProduct) + '\nFair Context: ' + JSON.stringify(session.fairContext || {})
-        };
-
-        const response = await openai.chat.completions.create({
-            model: 'gpt-4o',
-            messages: [systemMessage, ...messages],
-            response_format: { type: 'json_object' }
-        });
-
-        let responseText = response.choices[0]?.message?.content || '{}';
-
-        // Keep string content for history
-        session.conversationHistory.push({ role: 'user', content: userMessage || '[Image attached]' });
-        session.conversationHistory.push({ role: 'assistant', content: responseText });
-
-        try {
-            return JSON.parse(responseText);
-        } catch (e) {
-            console.error('Failed to parse OpenAI response:', responseText);
-            throw new Error('Invalid response from AI');
+            // Text-only — use gpt-4o-mini (10x cheaper)
+            messages = [
+                { role: 'system', content: systemWithState },
+                ...trimmedHistory,
+                { role: 'user', content: userMessage }
+            ];
+            const response = await openai.chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages,
+                max_tokens: 300,
+                response_format: { type: 'json_object' }
+            });
+            return this.parseResponse(response, session, userMessage);
         }
     }
 
-    private async processClaudeDecision(decision: any, session: any, replyToken: string) {
-        if (decision.extracted_fields) {
-            Object.assign(session.pendingProduct, decision.extracted_fields);
-            // Basic naive validation for some fields
-            for (const [key, val] of Object.entries(decision.extracted_fields)) {
+    private parseResponse(response: any, session: any, userMessage: string) {
+        const text = response.choices[0]?.message?.content || '{}';
+        session.conversationHistory.push({ role: 'user', content: userMessage });
+        session.conversationHistory.push({ role: 'assistant', content: text });
+        try {
+            return JSON.parse(text);
+        } catch {
+            throw new Error('AI returned invalid JSON');
+        }
+    }
+
+    private async applyDecision(decision: any, session: any, replyToken: string) {
+        // Merge extracted fields
+        if (decision.extracted && Object.keys(decision.extracted).length > 0) {
+            for (const [key, val] of Object.entries(decision.extracted)) {
                 const validate = (validators as any)[key];
-                if (validate && !validate(val)) {
-                    delete session.pendingProduct[key]; // reject invalid extracted
+                if (!validate || validate(val)) {
+                    (session.pendingProduct as any)[key] = val;
                 }
             }
         }
 
         if (decision.action === 'cancel') {
             clearSession(this.userId);
-            await replyMessage(replyToken, [{ type: 'text', text: decision.message || 'Cancelled. You can start over anytime.' }]);
+            await replyMessage(replyToken, [{ type: 'text', text: decision.message || 'ยกเลิกแล้วครับ ✌️' }]);
             return;
         }
 
         if (decision.action === 'save') {
             try {
-                await this.saveProduct(session.pendingProduct);
+                const sku = await this.saveProduct(session.pendingProduct);
                 clearSession(this.userId);
-
-                const sku = session.pendingProduct.sku_code || session.pendingProduct.product_name;
-                const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://yourapp.com';
-                const successMsg = decision.message + "\n\nView in workspace: " + appUrl + "/workspace?sku=" + sku;
-
-                await replyMessage(replyToken, [{ type: 'text', text: successMsg }]);
+                const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://work-flow-new-product.vercel.app';
+                await replyMessage(replyToken, [{
+                    type: 'text',
+                    text: (decision.message || '✅ บันทึกสินค้าแล้วครับ!') + '\n🔗 ' + appUrl + '/workspace?sku=' + sku
+                }]);
             } catch (err: any) {
-                await replyMessage(replyToken, [{ type: 'text', text: "Error saving product: " + err.message }]);
+                await replyMessage(replyToken, [{ type: 'text', text: '❌ บันทึกไม่สำเร็จ: ' + err.message }]);
             }
             return;
         }
@@ -163,42 +151,44 @@ export class LineProductAgent {
     private async handleMessage(text: string, replyToken: string) {
         const session = getSession(this.userId);
 
-        // Check for fair context mention specifically if not already set by Claude (or let Claude do it)
-        const match = text.match(/เพิ่มสินค้าจากงาน\s+(.+)/);
-        if (match) {
-            session.fairContext = {
-                fairName: match[1],
-                capturedAt: new Date()
-            };
-            session.pendingProduct.source_fair = match[1];
+        // Fair context extraction
+        const fairMatch = text.match(/จากงาน\s+(.+)/);
+        if (fairMatch) {
+            session.pendingProduct.source_fair = fairMatch[1].trim();
         }
 
-        const decision = await this.callOpenAI(session, text);
-        await this.processClaudeDecision(decision, session, replyToken);
+        const decision = await this.callAI(session, text);
+        await this.applyDecision(decision, session, replyToken);
     }
 
     private async handleImage(messageId: string, replyToken: string) {
         const session = getSession(this.userId);
-
-        // Get image content
         const buffer = await getContent(messageId);
         const base64 = buffer.toString('base64');
-
-        const decision = await this.callOpenAI(session, '', base64, 'image/jpeg');
-        await this.processClaudeDecision(decision, session, replyToken);
+        const decision = await this.callAI(session, '', base64);
+        await this.applyDecision(decision, session, replyToken);
     }
 
-    private async saveProduct(draft: Partial<ProductDraft>) {
+    private async saveProduct(draft: Partial<ProductDraft>): Promise<string> {
         const { create, findOne } = await import('@/lib/db/adapter');
 
-        if (!draft.sku_code) throw new Error('Missing SKU');
+        // Auto-generate SKU if missing
+        if (!draft.sku_code) {
+            const brand = (draft.brand || 'XX').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
+            const cat = (draft.category || 'GEN').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
+            const rand = Math.floor(1000 + Math.random() * 9000).toString();
+            draft.sku_code = `${brand}-${cat}-${rand}`;
+        }
 
-        // Check for duplicate SKU
+        // Ensure no duplicate SKU — re-roll random if collision
         const existing = await findOne('products', 'sku_code', draft.sku_code);
-        if (existing) throw new Error("SKU " + draft.sku_code + " already exists");
+        if (existing) {
+            const rand = Math.floor(1000 + Math.random() * 9000).toString();
+            draft.sku_code = draft.sku_code.replace(/-\d{4}$/, '-' + rand);
+        }
 
         const newProduct = {
-            product_id: draft.sku_code, // fallback if needed
+            product_id: draft.sku_code,
             sku_code: draft.sku_code,
             product_name: draft.product_name || '',
             status: 'Draft',
@@ -213,28 +203,27 @@ export class LineProductAgent {
             notes: draft.notes || '',
             source_fair: draft.source_fair || '',
             source_booth: draft.source_booth || '',
-            created_by: "line:" + this.userId,
+            created_by: 'line:' + this.userId,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         };
 
-        // Insert into products sheet
         await create('products', newProduct);
 
-        // Write to activity_log sheet
         await create('activity_log', {
             log_id: Date.now().toString(),
             action: 'CREATE_PRODUCT',
             entity_type: 'product',
             entity_id: draft.sku_code,
-            actor_email: "line:" + this.userId,
+            actor_email: 'line:' + this.userId,
             timestamp: new Date().toISOString(),
             before_json: '',
-            after_json: JSON.stringify({
-                source: 'line_agent',
-                fair: draft.source_fair || null,
-                ...newProduct
-            }),
+            after_json: JSON.stringify({ source: 'line_agent', fair: draft.source_fair || null }),
         });
+
+        return draft.sku_code;
     }
 }
+
+// Suppress unused variable warning for REQUIRED_FIELDS (used for documentation purposes)
+void REQUIRED_FIELDS;
