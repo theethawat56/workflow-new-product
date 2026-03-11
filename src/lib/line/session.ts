@@ -12,6 +12,7 @@ export interface ProductDraft {
     source_fair?: string      // trade fair name (from Trade Fair Agent context)
     source_booth?: string
     notes?: string
+    product_image_url?: string  // uploaded from Line image/namecard
 }
 
 export interface LineSession {

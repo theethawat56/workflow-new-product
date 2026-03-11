@@ -2,6 +2,7 @@ import { getSession, updateSession, clearSession, ProductDraft } from './session
 import { replyMessage, getContent } from './client';
 import OpenAI from 'openai';
 import { validators } from './validators';
+import { getDriveClient } from '@/lib/google/drive';
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -165,6 +166,34 @@ export class LineProductAgent {
         const session = getSession(this.userId);
         const buffer = await getContent(messageId);
         const base64 = buffer.toString('base64');
+
+        // Upload image to Google Drive and save URL in draft
+        try {
+            const drive = await getDriveClient();
+            const folderId = '13fcUC1dRmeCBEfYaCP_vJW3bkIGWNxqg';
+            const fileName = 'line_product_' + Date.now() + '.jpg';
+            const { Readable } = await import('stream');
+            const driveRes = await drive.files.create({
+                requestBody: { name: fileName, parents: [folderId] },
+                media: { mimeType: 'image/jpeg', body: Readable.from(buffer) },
+                fields: 'id',
+                supportsAllDrives: true,
+            });
+            const fileId = driveRes.data.id;
+            if (fileId) {
+                await drive.permissions.create({
+                    fileId,
+                    supportsAllDrives: true,
+                    requestBody: { role: 'reader', type: 'anyone' },
+                });
+                const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://work-flow-new-product.vercel.app';
+                session.pendingProduct.product_image_url = baseUrl + '/api/image?fileId=' + fileId;
+            }
+        } catch (uploadErr) {
+            console.error('Failed to upload image to Drive:', uploadErr);
+            // Don't block the flow — just skip the image URL
+        }
+
         const decision = await this.callAI(session, '', base64);
         await this.applyDecision(decision, session, replyToken);
     }
@@ -203,6 +232,7 @@ export class LineProductAgent {
             notes: draft.notes || '',
             source_fair: draft.source_fair || '',
             source_booth: draft.source_booth || '',
+            product_image_url: draft.product_image_url || '',
             created_by: 'line:' + this.userId,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
