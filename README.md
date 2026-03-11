@@ -34,3 +34,19 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Line Bot Setup
+
+1. Create a [Line Developers](https://developers.line.biz/en/) account and add a new channel for the Messaging API.
+2. Under **Basic settings**, find and copy your `Channel secret`.
+3. Under **Messaging API settings**, issue and copy a `Channel access token (long-lived)`.
+4. Update your `.env` (or `.env.local`) with the following values:
+   ```env
+   LINE_CHANNEL_SECRET=your_channel_secret
+   LINE_CHANNEL_ACCESS_TOKEN=your_access_token
+   OPENAI_API_KEY=your_openai_api_key
+   NEXT_PUBLIC_APP_URL=https://your-public-ngrok-or-domain.com
+   ```
+5. In your Line Developers Console -> **Messaging API settings**, set your **Webhook URL** to `https://your-public-ngrok-or-domain.com/api/line/webhook`.
+6. Enable **Use webhook**.
+7. Scan the **QR code** in the Messaging API settings to add your bot on Line, and start chatting to add products!

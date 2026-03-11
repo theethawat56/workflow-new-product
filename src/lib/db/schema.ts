@@ -29,6 +29,13 @@ export const SHEETS_CONFIG = {
             "date_of_fair",
             "product_image_url",
             "contact_image_url",
+            "brand",
+            "supplier_name",
+            "moq",
+            "lead_time_days",
+            "notes",
+            "source_fair",
+            "source_booth",
         ],
     },
     product_role_assignments: {
