@@ -15,8 +15,9 @@ function buildSystemPrompt(draft: Partial<ProductDraft>): string {
     const hasProductImage = !!draft.product_image_url;
     const hasContactImage = !!draft.contact_image_url;
     const hasName = !!draft.product_name;
-    const hasPrice = !!draft.price;
-    const hasMoq = !!draft.moq;
+    // We treat price=0 or moq=0 as "TBD / รอยืนยัน" if the user says they don't know it yet.
+    const hasPrice = draft.price !== undefined;
+    const hasMoq = draft.moq !== undefined;
 
     return `You are a fast product capture assistant for sourcing at trade fairs.
 Current draft state: ${JSON.stringify(draft)}
@@ -26,18 +27,18 @@ IMAGE STATUS (set programmatically — DO NOT ask for these again):
 - Contact/namecard image: ${hasContactImage ? '✅ RECEIVED' : '❌ MISSING'}
 
 CHECKLIST:
-- product_image_url: ${hasProductImage ? '✅' : '❌ ask user to send product photo'}
-- contact_image_url: ${hasContactImage ? '✅' : '❌ ask user to send namecard/contact photo'}
-- product_name: ${hasName ? '✅ ' + draft.product_name : '❌ missing'}
-- price (THB): ${hasPrice ? '✅ ' + draft.price : '❌ missing'}
-- moq: ${hasMoq ? '✅ ' + draft.moq : '❌ missing'}
+- 1️⃣ product_image_url: ${hasProductImage ? '✅' : '❌ ask user to send product photo'}
+- 2️⃣ contact_image_url: ${hasContactImage ? '✅' : '❌ ask user to send namecard/contact photo'}
+- 3️⃣ product_name: ${hasName ? '✅ ' + draft.product_name : '❌ missing'}
+- 4️⃣ price (THB): ${hasPrice ? '✅ ' + draft.price : '❌ missing (allow user to say "TBD", "รอยืนยัน" or skip)'}
+- 5️⃣ moq: ${hasMoq ? '✅ ' + draft.moq : '❌ missing (allow user to say "TBD" or "รอยืนยัน" or skip)'}
 
 RULES:
-1. Ask for items in the checklist order — one at a time, short message (1-2 lines)
+1. Ask for items in the checklist order — one at a time, using a polite, clear message.
 2. If ALL 5 items are ✅ → action=confirm, show a short summary in Thai and ask ใช่/ไม่
 3. If user says ใช่ after confirm → action=save
 4. If user says ยกเลิก/cancel → action=cancel
-5. Accept price/moq in any currency — just save the number (e.g. "20 usd" → price=20)
+5. VERY IMPORTANT: If the user says they don't know the price or MOQ yet (e.g., "รอยืนยัน", "ยังไม่ทราบ", "TBD"), accept it! Extract price=0 or moq=0 and save "รอยืนยัน" in the 'notes' field.
 6. Extract product_name, brand, supplier_name from images when possible
 7. NEVER include product_image_url or contact_image_url in extracted — those are set by the system
 
@@ -54,13 +55,33 @@ export class LineProductAgent {
 
     async handle(event: any) {
         if (event.type !== 'message') return;
+
         try {
+            const session = await getSession(this.userId);
+            const isGroup = event.source?.type === 'group' || event.source?.type === 'room';
+            const isIdle = session.state === 'idle';
+
+            // Group Chat Constraint: Ignore messages if idle, unless they say "เพิ่มสินค้า"
+            if (isGroup && isIdle) {
+                if (event.message?.type === 'text' && event.message.text.includes('เพิ่มสินค้า')) {
+                    // Start session
+                    await replyMessage(event.replyToken, [{ type: 'text', text: 'เริ่มการเพิ่มสินค้าครับ 📦\nกรุณาส่งรูปภาพสินค้าก่อนเลยครับ 📸' }]);
+                    await updateSession(this.userId, { ...session, state: 'collecting' });
+                }
+                return; // Ignore everything else in the group if idle
+            }
+
             if (event.message.type === 'text') {
+                // If they say เพิ่มสินค้า while already collecting, reset session.
+                if (event.message.text.includes('เพิ่มสินค้า') && !isIdle) {
+                    await clearSession(this.userId);
+                    await replyMessage(event.replyToken, [{ type: 'text', text: 'เริ่มการเพิ่มสินค้าชิ้นใหม่ครับ 📦\nกรุณาส่งรูปภาพสินค้าก่อนเลยครับ 📸' }]);
+                    return;
+                }
                 await this.handleMessage(event.message.text, event.replyToken);
             } else if (event.message.type === 'image') {
                 await this.handleImage(event.message.id, event.replyToken);
             } else {
-                const session = await getSession(this.userId);
                 const draft = session.pendingProduct;
                 if (!draft.product_image_url) {
                     await replyMessage(event.replyToken, [{ type: 'text', text: 'กรุณาส่งรูปสินค้าก่อนเลยครับ 📸' }]);
@@ -72,7 +93,11 @@ export class LineProductAgent {
             }
         } catch (error) {
             console.error('Error handling event:', error);
-            await replyMessage(event.replyToken, [{ type: 'text', text: 'ขออภัย เกิดข้อผิดพลาด กรุณาลองใหม่ครับ' }]);
+            // Only send error reply if we are actively talking to them
+            const session = await getSession(this.userId);
+            if (session.state !== 'idle') {
+                await replyMessage(event.replyToken, [{ type: 'text', text: 'ขออภัย เกิดข้อผิดพลาด กรุณาลองใหม่ครับ' }]);
+            }
         }
     }
 
