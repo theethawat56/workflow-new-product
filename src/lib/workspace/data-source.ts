@@ -49,8 +49,8 @@ export async function fetchSheet<T>(sheetName: SheetName, forceRefresh: boolean 
         )
 
         if (missingHeaders.length > 0) {
-            throw new SheetError(
-                `Missing required headers in ${sheetName}: ${missingHeaders.join(", ")}`
+            console.warn(
+                `[Warning] Missing headers in ${sheetName}: ${missingHeaders.join(", ")}. Continuing anyway.`
             )
         }
 

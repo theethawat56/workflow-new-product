@@ -26,6 +26,9 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
     process.exit(1)
 }
 
+// NOTE: This redirect URI MUST be added to your Google Cloud Console:
+// APIs & Services → Credentials → OAuth 2.0 Client → Authorized redirect URIs
+// Add: http://localhost:3001/oauth/callback
 const REDIRECT_URI = "http://localhost:3001/oauth/callback"
 
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)

@@ -37,7 +37,18 @@ export async function GET(req: NextRequest) {
             },
         })
     } catch (error: any) {
-        console.error("[Image Proxy]", error?.message)
-        return NextResponse.json({ error: "Image not found" }, { status: 404 })
+        const status = error?.response?.status ?? error?.code ?? "unknown"
+        const message = error?.response?.data?.error?.message ?? error?.message ?? "unknown error"
+        console.error(`[Image Proxy] fileId=${fileId} status=${status} message=${message}`)
+        if (error?.response?.data) {
+            console.error("[Image Proxy] response data:", JSON.stringify(error.response.data))
+        }
+
+        // In non-production return the real reason so it's easy to debug
+        const isDev = process.env.NODE_ENV !== "production"
+        return NextResponse.json(
+            { error: "Image not found", ...(isDev && { reason: message, status }) },
+            { status: 404 }
+        )
     }
 }
