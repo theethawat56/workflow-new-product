@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getDriveClient, DRIVE_FOLDER_ID } from "@/lib/google/drive"
+import { getDriveClientForUpload, DRIVE_FOLDER_ID } from "@/lib/google/drive"
 
 // Force Node.js runtime — required for googleapis (uses streams, crypto, etc.)
 export const runtime = "nodejs"
@@ -38,8 +38,7 @@ export async function POST(req: NextRequest) {
         const safeName = file.name.replace(/[^a-z0-9._-]/gi, "_").toLowerCase()
         const fileName = `${type}_${timestamp}_${safeName}`
 
-        // Upload directly to Google Drive
-        const drive = await getDriveClient()
+        const drive = await getDriveClientForUpload()
 
         // Use a PassThrough stream from the Buffer so googleapis can stream the body
         const { PassThrough } = await import("stream")

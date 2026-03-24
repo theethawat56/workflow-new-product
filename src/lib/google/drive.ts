@@ -3,6 +3,10 @@ import { Readable } from "stream"
 
 export const DRIVE_FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID || "13fcUC1dRmeCBEfYaCP_vJW3bkIGWNxqg"
 
+/**
+ * Returns a Drive client using OAuth (preferred) or Service Account (fallback).
+ * Service Account works for reads but NOT for file creation (no storage quota).
+ */
 export async function getDriveClient() {
     if (process.env.GOOGLE_REFRESH_TOKEN) {
         const oauth2Client = new google.auth.OAuth2(
@@ -30,17 +34,37 @@ export async function getDriveClient() {
     return google.drive({ version: 'v3', auth })
 }
 
+/**
+ * Returns a Drive client that uses OAuth — required for file uploads.
+ * Service Accounts have no storage quota and cannot create files.
+ */
+export async function getDriveClientForUpload() {
+    if (!process.env.GOOGLE_REFRESH_TOKEN || !process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+        throw new Error(
+            "Google Drive upload requires OAuth credentials. " +
+            "Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN in your Vercel environment variables. " +
+            "Service Accounts cannot upload files (no storage quota)."
+        )
+    }
+
+    const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET
+    )
+    oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN })
+    return google.drive({ version: 'v3', auth: oauth2Client })
+}
+
 export function getDriveFolderId() {
     return DRIVE_FOLDER_ID
 }
 
 export async function uploadFileToDrive(fileBuffer: Buffer, fileName: string, mimeType: string) {
-    const drive = await getDriveClient()
+    const drive = await getDriveClientForUpload()
     const folderId = DRIVE_FOLDER_ID
-    const authMethod = process.env.GOOGLE_REFRESH_TOKEN ? "OAuth" : "Service Account"
 
     console.log("Attempting upload to folder:", folderId)
-    console.log("Auth method:", authMethod)
+    console.log("Auth method: OAuth")
 
     try {
         const response = await drive.files.create({
