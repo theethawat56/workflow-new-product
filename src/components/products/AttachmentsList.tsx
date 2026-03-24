@@ -3,7 +3,6 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { addAttachmentAction, uploadAttachmentAction } from "@/app/actions/attachment"
@@ -85,16 +84,12 @@ export function AttachmentsList({ productId, attachments }: Props) {
                     </div>
                     <div className="space-y-2 w-[180px]">
                         <label className="text-sm font-medium">Type</label>
-                        <Select value={type} onValueChange={setType}>
-                            <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="Spec">Spec</SelectItem>
-                                <SelectItem value="Manual">Manual</SelectItem>
-                                <SelectItem value="Images">Images</SelectItem>
-                                <SelectItem value="MarketingMaterial">Marketing</SelectItem>
-                                <SelectItem value="Other">Other</SelectItem>
-                            </SelectContent>
-                        </Select>
+                        <Input
+                            value={type}
+                            onChange={e => setType(e.target.value)}
+                            placeholder="e.g. Spec, Manual, Images..."
+                            className="bg-white"
+                        />
                     </div>
                     <Button onClick={uploadMode === 'link' ? handleAddLink : handleUploadFile} disabled={submitting}>
                         {submitting ? "Adding..." : (uploadMode === 'link' ? "Add Link" : "Upload")}
