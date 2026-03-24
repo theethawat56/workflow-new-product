@@ -13,20 +13,12 @@ export async function GET(req: NextRequest) {
     try {
         const drive = await getDriveClient()
 
-        // Fetch the file as a stream from Google Drive
         const fileRes = await drive.files.get(
             { fileId, alt: "media", supportsAllDrives: true },
             { responseType: "arraybuffer" }
         )
 
-        // Get content type from the drive file metadata
-        const metaRes = await drive.files.get({
-            fileId,
-            fields: "mimeType",
-            supportsAllDrives: true,
-        })
-        const mimeType = metaRes.data.mimeType || "image/jpeg"
-
+        const mimeType = (fileRes.headers?.["content-type"] as string) || "image/jpeg"
         const buffer = Buffer.from(fileRes.data as ArrayBuffer)
 
         return new NextResponse(buffer, {

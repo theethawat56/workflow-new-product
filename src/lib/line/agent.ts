@@ -2,7 +2,7 @@ import { getSession, updateSession, clearSession, ProductDraft } from './session
 import { replyMessage, getContent } from './client';
 import OpenAI from 'openai';
 import { validators } from './validators';
-import { getDriveClient } from '@/lib/google/drive';
+import { getDriveClient, DRIVE_FOLDER_ID } from '@/lib/google/drive';
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -217,11 +217,10 @@ export class LineProductAgent {
 
         try {
             const drive = await getDriveClient();
-            const folderId = '13fcUC1dRmeCBEfYaCP_vJW3bkIGWNxqg';
             const fileName = 'line_' + imageLabel + '_' + Date.now() + '.jpg';
             const { Readable } = await import('stream');
             const driveRes = await drive.files.create({
-                requestBody: { name: fileName, parents: [folderId] },
+                requestBody: { name: fileName, parents: [DRIVE_FOLDER_ID] },
                 media: { mimeType: 'image/jpeg', body: Readable.from(buffer) },
                 fields: 'id',
                 supportsAllDrives: true,

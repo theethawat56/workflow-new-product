@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getDriveClient } from "@/lib/google/drive"
+import { getDriveClient, DRIVE_FOLDER_ID } from "@/lib/google/drive"
 
 // Force Node.js runtime — required for googleapis (uses streams, crypto, etc.)
 export const runtime = "nodejs"
@@ -8,8 +8,6 @@ const MAX_SIZES: Record<string, number> = {
     product: 10 * 1024 * 1024, // 10 MB
     contact: 5 * 1024 * 1024,  // 5 MB
 }
-
-const PRODUCT_IMAGES_FOLDER_ID = "13fcUC1dRmeCBEfYaCP_vJW3bkIGWNxqg"
 
 export async function POST(req: NextRequest) {
     try {
@@ -51,7 +49,7 @@ export async function POST(req: NextRequest) {
         const driveResponse = await drive.files.create({
             requestBody: {
                 name: fileName,
-                parents: [PRODUCT_IMAGES_FOLDER_ID],
+                parents: [DRIVE_FOLDER_ID],
             },
             media: {
                 mimeType: file.type,

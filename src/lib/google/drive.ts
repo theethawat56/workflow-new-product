@@ -1,8 +1,9 @@
 import { google } from "googleapis"
 import { Readable } from "stream"
 
+export const DRIVE_FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID || "13fcUC1dRmeCBEfYaCP_vJW3bkIGWNxqg"
+
 export async function getDriveClient() {
-    // If we have a refresh token, use OAuth (User Identity) - Solves quota issues
     if (process.env.GOOGLE_REFRESH_TOKEN) {
         const oauth2Client = new google.auth.OAuth2(
             process.env.GOOGLE_CLIENT_ID,
@@ -12,11 +13,16 @@ export async function getDriveClient() {
         return google.drive({ version: 'v3', auth: oauth2Client })
     }
 
-    // Fallback to Service Account
+    if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+        throw new Error(
+            "Missing Google credentials: set GOOGLE_REFRESH_TOKEN (OAuth) or GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_PRIVATE_KEY (Service Account)"
+        )
+    }
+
     const auth = new google.auth.GoogleAuth({
         credentials: {
             client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-            private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+            private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
         },
         scopes: ['https://www.googleapis.com/auth/drive'],
     })
@@ -24,35 +30,41 @@ export async function getDriveClient() {
     return google.drive({ version: 'v3', auth })
 }
 
-export async function getDriveFolderId() {
-    return process.env.GOOGLE_DRIVE_FOLDER_ID
+export function getDriveFolderId() {
+    return DRIVE_FOLDER_ID
 }
 
 export async function uploadFileToDrive(fileBuffer: Buffer, fileName: string, mimeType: string) {
     const drive = await getDriveClient()
-
-    // Explicit folder ID from requirements
-    const folderId = "13fcUC1dRmeCBEfYaCP_vJW3bkIGWNxqg"
+    const folderId = DRIVE_FOLDER_ID
+    const authMethod = process.env.GOOGLE_REFRESH_TOKEN ? "OAuth" : "Service Account"
 
     console.log("Attempting upload to folder:", folderId)
-    console.log("Using Service Account:", process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL)
+    console.log("Auth method:", authMethod)
 
     try {
-        const fileMetadata = {
-            name: fileName,
-            parents: [folderId]
-        }
-
-        const media = {
-            mimeType: mimeType,
-            body: Readable.from(fileBuffer)
-        }
-
         const response = await drive.files.create({
-            requestBody: fileMetadata,
-            media: media,
+            requestBody: {
+                name: fileName,
+                parents: [folderId],
+            },
+            media: {
+                mimeType,
+                body: Readable.from(fileBuffer),
+            },
             fields: 'id, webViewLink',
-            supportsAllDrives: true
+            supportsAllDrives: true,
+        })
+
+        const fileId = response.data.id
+        if (!fileId) {
+            throw new Error("Drive upload returned no file ID")
+        }
+
+        await drive.permissions.create({
+            fileId,
+            supportsAllDrives: true,
+            requestBody: { role: "reader", type: "anyone" },
         })
 
         return response.data

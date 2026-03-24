@@ -63,9 +63,12 @@ export async function uploadAttachmentAction(productId: string, type: string, fo
         const buffer = Buffer.from(await file.arrayBuffer())
         const uploadedFile = await uploadFileToDrive(buffer, file.name, file.type)
 
-        if (!uploadedFile || !uploadedFile.webViewLink) {
+        if (!uploadedFile || !uploadedFile.id) {
             throw new Error("Failed to upload to Drive")
         }
+
+        const baseUrl = process.env.NEXTAUTH_URL || "https://work-flow-new-product.vercel.app"
+        const driveUrl = `${baseUrl}/api/image?fileId=${uploadedFile.id}`
 
         // Integrity Check
         const product = await findOne<any>("products", "product_id", productId)
@@ -79,7 +82,7 @@ export async function uploadAttachmentAction(productId: string, type: string, fo
             product_id: productId,
             product_task_id: "",
             type,
-            drive_url: uploadedFile.webViewLink,
+            drive_url: driveUrl,
             created_at: new Date().toISOString(),
             created_by: actor
         }

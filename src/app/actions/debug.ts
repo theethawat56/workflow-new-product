@@ -1,10 +1,10 @@
 "use server"
 
-import { getDriveClient } from "@/lib/google/drive"
+import { getDriveClient, DRIVE_FOLDER_ID } from "@/lib/google/drive"
 
 export async function debugDriveAccessAction() {
     const drive = await getDriveClient()
-    const folderId = "13fcUC1dRmeCBEfYaCP_vJW3bkIGWNxqg"
+    const folderId = DRIVE_FOLDER_ID
     const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
 
     try {
