@@ -27,6 +27,8 @@ import {
     Package,
     Calculator,
     Coins,
+    Receipt,
+    Sparkles,
 } from "lucide-react"
 
 type TransportMode = "sea" | "land" | "express"
@@ -85,6 +87,44 @@ interface Item {
     units: string // total units (for per-unit cost)
 }
 
+type ChargeBasis = "per_cbm" | "per_kg" | "per_shipment" | "per_carton"
+
+interface ExtraCharge {
+    id: string
+    label: string
+    amount: string // THB (source of truth)
+    basis: ChargeBasis
+}
+
+const CHARGE_BASIS_LABEL: Record<ChargeBasis, string> = {
+    per_cbm: "per CBM",
+    per_kg: "per Kg",
+    per_shipment: "per Shipment (SET)",
+    per_carton: "per Carton",
+}
+
+const newCharge = (partial: Partial<ExtraCharge> = {}): ExtraCharge => ({
+    id: Math.random().toString(36).slice(2, 9),
+    label: partial.label ?? "",
+    amount: partial.amount ?? "",
+    basis: partial.basis ?? "per_cbm",
+})
+
+const LCL_SEA_PRESET: ExtraCharge[] = [
+    newCharge({ label: "O/F (Ocean Freight)", amount: "0", basis: "per_cbm" }),
+    newCharge({ label: "Local Charge", amount: "1030", basis: "per_cbm" }),
+    newCharge({ label: "D/O (Delivery Order)", amount: "1350", basis: "per_shipment" }),
+]
+
+const LAND_PRESET: ExtraCharge[] = [
+    newCharge({ label: "Customs Clearance", amount: "2500", basis: "per_shipment" }),
+    newCharge({ label: "Delivery Fee", amount: "1500", basis: "per_shipment" }),
+]
+
+const EXPRESS_PRESET: ExtraCharge[] = [
+    newCharge({ label: "Handling Fee", amount: "500", basis: "per_shipment" }),
+]
+
 const newItem = (): Item => ({
     id: Math.random().toString(36).slice(2, 9),
     name: "",
@@ -121,6 +161,19 @@ export function ShippingCalculator() {
     const [copied, setCopied] = useState(false)
     const [overrideRates, setOverrideRates] = useState(false)
     const [rates, setRates] = useState(RATE_TABLE_THB)
+    const [useBaseRate, setUseBaseRate] = useState(true)
+    const [extraCharges, setExtraCharges] = useState<ExtraCharge[]>([])
+
+    const addExtraCharge = () => setExtraCharges((prev) => [...prev, newCharge()])
+    const removeExtraCharge = (id: string) =>
+        setExtraCharges((prev) => prev.filter((c) => c.id !== id))
+    const updateExtraCharge = (id: string, patch: Partial<ExtraCharge>) =>
+        setExtraCharges((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)))
+
+    const applyPreset = (preset: ExtraCharge[]) => {
+        setUseBaseRate(false)
+        setExtraCharges(preset.map((c) => newCharge(c)))
+    }
 
     const updateItem = (id: string, patch: Partial<Item>) => {
         setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)))
@@ -160,13 +213,12 @@ export function ShippingCalculator() {
             const chargeableWeight = Math.max(totalWeight, volumetricWeight)
 
             const r = rates[transport][it.category]
-            const byCBM = totalCBM * r.perCBM
-            const byKg = totalWeight * r.perKg
-            const shippingTHB = Math.max(byCBM, byKg)
+            const byCBM = useBaseRate ? totalCBM * r.perCBM : 0
+            const byKg = useBaseRate ? totalWeight * r.perKg : 0
+            const baseFreightTHB = useBaseRate ? Math.max(byCBM, byKg) : 0
             const driver: "CBM" | "KG" = byCBM >= byKg ? "CBM" : "KG"
 
             const units = n(it.units)
-            const costPerUnitTHB = units > 0 ? shippingTHB / units : 0
 
             return {
                 id: it.id,
@@ -180,18 +232,50 @@ export function ShippingCalculator() {
                 chargeableWeight,
                 byCBM,
                 byKg,
-                shippingTHB,
+                baseFreightTHB,
                 driver,
                 units,
-                costPerUnitTHB,
                 rate: r,
             }
         })
 
         const totalCBM = rows.reduce((s, r) => s + r.totalCBM, 0)
         const totalWeight = rows.reduce((s, r) => s + r.totalWeight, 0)
+        const totalCartons = rows.reduce((s, r) => s + r.qty, 0)
         const totalVolumetric = rows.reduce((s, r) => s + r.volumetricWeight, 0)
-        const totalShippingTHB = rows.reduce((s, r) => s + r.shippingTHB, 0)
+        const totalBaseFreightTHB = rows.reduce((s, r) => s + r.baseFreightTHB, 0)
+
+        // Extra charges — computed once per shipment (not per item row)
+        const extraLines = extraCharges.map((c) => {
+            const amount = n(c.amount)
+            let total = 0
+            switch (c.basis) {
+                case "per_cbm":
+                    total = amount * totalCBM
+                    break
+                case "per_kg":
+                    total = amount * totalWeight
+                    break
+                case "per_shipment":
+                    total = amount
+                    break
+                case "per_carton":
+                    total = amount * totalCartons
+                    break
+            }
+            return {
+                id: c.id,
+                label: c.label || "(no label)",
+                basis: c.basis,
+                rate: amount,
+                totalTHB: total,
+            }
+        })
+        const totalExtraTHB = extraLines.reduce((s, l) => s + l.totalTHB, 0)
+        const totalShippingTHB = totalBaseFreightTHB + totalExtraTHB
+
+        const totalUnits = rows.reduce((s, r) => s + r.units, 0)
+        const costPerUnitTHB = totalUnits > 0 ? totalShippingTHB / totalUnits : 0
 
         const productValue = n(productValueTHB)
         const dutyAmount = ((productValue + totalShippingTHB) * n(taxDutyPct)) / 100
@@ -201,13 +285,28 @@ export function ShippingCalculator() {
             rows,
             totalCBM,
             totalWeight,
+            totalCartons,
             totalVolumetric,
+            totalBaseFreightTHB,
+            extraLines,
+            totalExtraTHB,
             totalShippingTHB,
+            totalUnits,
+            costPerUnitTHB,
             productValue,
             dutyAmount,
             landedCostTHB,
         }
-    }, [items, transport, volumetricDivisor, productValueTHB, taxDutyPct, rates])
+    }, [
+        items,
+        transport,
+        volumetricDivisor,
+        productValueTHB,
+        taxDutyPct,
+        rates,
+        extraCharges,
+        useBaseRate,
+    ])
 
     const buildSummaryText = () => {
         const sym = currencySymbol[displayCurrency]
@@ -221,17 +320,13 @@ export function ShippingCalculator() {
         lines.push("")
         calculation.rows.forEach((r, i) => {
             lines.push(`[${i + 1}] ${r.name}  (${CATEGORY_INFO[r.category].label})`)
-            lines.push(`    Cartons: ${r.qty}  |  CBM: ${fmt(r.totalCBM, 4)}  |  Weight: ${fmt(r.totalWeight)} kg`)
-            lines.push(`    Volumetric Weight: ${fmt(r.volumetricWeight)} kg`)
             lines.push(
-                `    By CBM: ${sym}${fmt(toDisplay(r.byCBM))}  |  By Kg: ${sym}${fmt(
-                    toDisplay(r.byKg)
-                )}  →  Charge by ${r.driver}`
+                `    Cartons: ${r.qty}  |  CBM: ${fmt(r.totalCBM, 4)}  |  Weight: ${fmt(r.totalWeight)} kg`
             )
-            lines.push(`    Row Shipping: ${sym}${fmt(toDisplay(r.shippingTHB))}`)
-            if (r.units > 0) {
+            lines.push(`    Volumetric Weight: ${fmt(r.volumetricWeight)} kg`)
+            if (useBaseRate) {
                 lines.push(
-                    `    Per Unit: ${sym}${fmt(toDisplay(r.costPerUnitTHB))} / unit  (${r.units} units)`
+                    `    Base Freight: ${sym}${fmt(toDisplay(r.baseFreightTHB))}  (charged by ${r.driver})`
                 )
             }
             lines.push("")
@@ -240,9 +335,29 @@ export function ShippingCalculator() {
         lines.push(`Total CBM:              ${fmt(calculation.totalCBM, 4)}`)
         lines.push(`Total Actual Weight:    ${fmt(calculation.totalWeight)} kg`)
         lines.push(`Total Volumetric Wt:    ${fmt(calculation.totalVolumetric)} kg`)
+        lines.push(`Total Cartons:          ${calculation.totalCartons}`)
+        lines.push("")
+        lines.push("COST BREAKDOWN")
+        lines.push("-".repeat(40))
+        if (useBaseRate && calculation.totalBaseFreightTHB > 0) {
+            lines.push(
+                `Base Freight:           ${sym}${fmt(toDisplay(calculation.totalBaseFreightTHB))}`
+            )
+        }
+        calculation.extraLines.forEach((l) => {
+            const basisNote = `${fmt(l.rate)} THB ${CHARGE_BASIS_LABEL[l.basis]}`
+            lines.push(
+                `${(l.label + ":").padEnd(24)}${sym}${fmt(toDisplay(l.totalTHB))}   (${basisNote})`
+            )
+        })
         lines.push(
-            `Total Shipping Cost:    ${sym}${fmt(toDisplay(calculation.totalShippingTHB))}`
+            `TOTAL SHIPPING:         ${sym}${fmt(toDisplay(calculation.totalShippingTHB))}`
         )
+        if (calculation.totalUnits > 0) {
+            lines.push(
+                `Per Unit (${calculation.totalUnits} units):   ${sym}${fmt(toDisplay(calculation.costPerUnitTHB))} / unit`
+            )
+        }
         if (calculation.productValue > 0) {
             lines.push(
                 `Product Value:          ${sym}${fmt(toDisplay(calculation.productValue))}`
@@ -545,20 +660,24 @@ export function ShippingCalculator() {
                                             value={fmt(row.volumetricWeight)}
                                             unit="kg"
                                         />
+                                        {useBaseRate ? (
+                                            <Metric
+                                                label={`Base Freight (${row.driver})`}
+                                                value={`${sym}${fmt(toDisplay(row.baseFreightTHB))}`}
+                                                unit={displayCurrency}
+                                                highlight
+                                            />
+                                        ) : (
+                                            <Metric
+                                                label="Base Freight"
+                                                value="(disabled)"
+                                                unit="using extra only"
+                                            />
+                                        )}
                                         <Metric
-                                            label={`Charged by ${row.driver}`}
-                                            value={`${sym}${fmt(toDisplay(row.shippingTHB))}`}
-                                            unit={displayCurrency}
-                                            highlight
-                                        />
-                                        <Metric
-                                            label="Per Unit"
-                                            value={
-                                                row.units > 0
-                                                    ? `${sym}${fmt(toDisplay(row.costPerUnitTHB))}`
-                                                    : "—"
-                                            }
-                                            unit={row.units > 0 ? `/ ${row.units} unit` : ""}
+                                            label="Cartons"
+                                            value={String(row.qty)}
+                                            unit={row.units > 0 ? `${row.units} units` : ""}
                                         />
                                     </div>
                                 )}
@@ -568,10 +687,183 @@ export function ShippingCalculator() {
                 </CardContent>
             </Card>
 
+            {/* Additional Charges */}
+            <Card>
+                <CardHeader className="space-y-3">
+                    <div className="flex flex-row items-start justify-between gap-2 flex-wrap">
+                        <div>
+                            <CardTitle className="text-base flex items-center gap-2">
+                                <Receipt className="h-4 w-4" /> 3. ค่าขนส่งและค่าใช้จ่ายเพิ่มเติม
+                            </CardTitle>
+                            <CardDescription>
+                                เช่น O/F, Local Charge, D/O, Customs, Handling — เพิ่มได้ไม่จำกัด
+                            </CardDescription>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => applyPreset(LCL_SEA_PRESET)}
+                            >
+                                <Sparkles className="h-3.5 w-3.5 mr-1" /> LCL Sea Preset
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => applyPreset(LAND_PRESET)}
+                            >
+                                <Sparkles className="h-3.5 w-3.5 mr-1" /> Land Preset
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => applyPreset(EXPRESS_PRESET)}
+                            >
+                                <Sparkles className="h-3.5 w-3.5 mr-1" /> Express Preset
+                            </Button>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                        <input
+                            id="useBaseRate"
+                            type="checkbox"
+                            checked={useBaseRate}
+                            onChange={(e) => setUseBaseRate(e.target.checked)}
+                            className="h-4 w-4 rounded border-input"
+                        />
+                        <label htmlFor="useBaseRate" className="cursor-pointer">
+                            คิดค่า Base Freight จาก Category (Type A/B/C) — ปิดถ้าคิดเป็น line-item อย่างเดียว
+                        </label>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    {extraCharges.length === 0 ? (
+                        <div className="text-sm text-muted-foreground text-center py-6 border border-dashed rounded-md">
+                            ยังไม่มีรายการ — กด Preset ด้านบน หรือกด "Add Charge" เพื่อเพิ่มเอง
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b">
+                                        <th className="text-left p-2 font-medium">Label</th>
+                                        <th className="text-right p-2 font-medium w-32">
+                                            Amount (THB)
+                                        </th>
+                                        <th className="text-left p-2 font-medium w-44">Basis</th>
+                                        <th className="text-right p-2 font-medium w-32">
+                                            Total (THB)
+                                        </th>
+                                        <th className="w-10"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {extraCharges.map((c, i) => {
+                                        const line = calculation.extraLines[i]
+                                        return (
+                                            <tr key={c.id} className="border-b">
+                                                <td className="p-2">
+                                                    <Input
+                                                        value={c.label}
+                                                        placeholder="e.g. Local Charge"
+                                                        onChange={(e) =>
+                                                            updateExtraCharge(c.id, {
+                                                                label: e.target.value,
+                                                            })
+                                                        }
+                                                    />
+                                                </td>
+                                                <td className="p-2">
+                                                    <Input
+                                                        type="number"
+                                                        inputMode="decimal"
+                                                        className="text-right"
+                                                        value={c.amount}
+                                                        onChange={(e) =>
+                                                            updateExtraCharge(c.id, {
+                                                                amount: e.target.value,
+                                                            })
+                                                        }
+                                                    />
+                                                </td>
+                                                <td className="p-2">
+                                                    <Select
+                                                        value={c.basis}
+                                                        onValueChange={(v) =>
+                                                            updateExtraCharge(c.id, {
+                                                                basis: v as ChargeBasis,
+                                                            })
+                                                        }
+                                                    >
+                                                        <SelectTrigger className="bg-background">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {(
+                                                                Object.keys(
+                                                                    CHARGE_BASIS_LABEL
+                                                                ) as ChargeBasis[]
+                                                            ).map((b) => (
+                                                                <SelectItem key={b} value={b}>
+                                                                    {CHARGE_BASIS_LABEL[b]}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </td>
+                                                <td className="p-2 text-right font-medium">
+                                                    {line ? fmt(line.totalTHB) : "0.00"}
+                                                </td>
+                                                <td className="p-2">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() => removeExtraCharge(c.id)}
+                                                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td
+                                            colSpan={3}
+                                            className="p-2 text-right font-semibold text-muted-foreground"
+                                        >
+                                            Additional Charges Subtotal
+                                        </td>
+                                        <td className="p-2 text-right font-bold">
+                                            ฿{fmt(calculation.totalExtraTHB)}
+                                        </td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    )}
+                    <Button
+                        type="button"
+                        onClick={addExtraCharge}
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                    >
+                        <Plus className="h-4 w-4 mr-1" /> Add Charge
+                    </Button>
+                </CardContent>
+            </Card>
+
             {/* Advanced Settings */}
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-base">3. การตั้งค่า (Advanced)</CardTitle>
+                    <CardTitle className="text-base">4. การตั้งค่า (Advanced)</CardTitle>
                     <CardDescription>
                         ตั้งค่าอัตราแลกเปลี่ยน น้ำหนักเชิงปริมาตร และภาษีนำเข้า
                     </CardDescription>
@@ -785,10 +1077,68 @@ export function ShippingCalculator() {
                             value={`${fmt(calculation.totalVolumetric)} kg`}
                         />
                         <SummaryTile
-                            label="Shipping Cost"
+                            label="Total Shipping"
                             value={`${sym}${fmt(toDisplay(calculation.totalShippingTHB))}`}
                             highlight
                         />
+                    </div>
+
+                    {/* Cost Breakdown Line Items */}
+                    <div className="rounded-md border bg-muted/10">
+                        <div className="px-4 py-2 border-b text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            Cost Breakdown
+                        </div>
+                        <div className="divide-y">
+                            {useBaseRate && calculation.totalBaseFreightTHB > 0 && (
+                                <div className="flex justify-between px-4 py-2 text-sm">
+                                    <span>
+                                        Base Freight{" "}
+                                        <span className="text-muted-foreground">
+                                            (max CBM × rate vs Kg × rate)
+                                        </span>
+                                    </span>
+                                    <span className="font-medium">
+                                        {sym}
+                                        {fmt(toDisplay(calculation.totalBaseFreightTHB))}
+                                    </span>
+                                </div>
+                            )}
+                            {calculation.extraLines.map((l) => (
+                                <div
+                                    key={l.id}
+                                    className="flex justify-between px-4 py-2 text-sm"
+                                >
+                                    <span>
+                                        {l.label}{" "}
+                                        <span className="text-muted-foreground">
+                                            ({fmt(l.rate)} THB {CHARGE_BASIS_LABEL[l.basis]})
+                                        </span>
+                                    </span>
+                                    <span className="font-medium">
+                                        {sym}
+                                        {fmt(toDisplay(l.totalTHB))}
+                                    </span>
+                                </div>
+                            ))}
+                            <div className="flex justify-between px-4 py-2 text-sm bg-primary/5">
+                                <span className="font-semibold">Total Shipping</span>
+                                <span className="font-bold text-primary">
+                                    {sym}
+                                    {fmt(toDisplay(calculation.totalShippingTHB))}
+                                </span>
+                            </div>
+                            {calculation.totalUnits > 0 && (
+                                <div className="flex justify-between px-4 py-2 text-sm">
+                                    <span className="text-muted-foreground">
+                                        Per Unit ({calculation.totalUnits} units)
+                                    </span>
+                                    <span className="font-medium">
+                                        {sym}
+                                        {fmt(toDisplay(calculation.costPerUnitTHB))} / unit
+                                    </span>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     {calculation.productValue > 0 && (
