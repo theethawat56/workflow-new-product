@@ -29,6 +29,11 @@ import {
     Coins,
     Receipt,
     Sparkles,
+    TrendingUp,
+    Tag,
+    Wallet,
+    Percent,
+    Zap as Bolt,
 } from "lucide-react"
 
 type TransportMode = "sea" | "land" | "express"
@@ -125,6 +130,57 @@ const EXPRESS_PRESET: ExtraCharge[] = [
     newCharge({ label: "Handling Fee", amount: "500", basis: "per_shipment" }),
 ]
 
+// Last-mile delivery (warehouse → customer) — THB per parcel, Thailand 2025
+// Tiers defined by max chargeable weight (kg). Last tier covers oversize.
+type LastMileCarrier = "dhl" | "shopee" | "avg" | "custom"
+
+interface LastMileTier {
+    maxKg: number
+    price: number
+}
+
+const LAST_MILE_RATES: Record<Exclude<LastMileCarrier, "custom">, LastMileTier[]> = {
+    dhl: [
+        { maxKg: 1, price: 50 },
+        { maxKg: 3, price: 70 },
+        { maxKg: 5, price: 90 },
+        { maxKg: 10, price: 130 },
+        { maxKg: 20, price: 200 },
+        { maxKg: Infinity, price: 300 },
+    ],
+    shopee: [
+        { maxKg: 1, price: 30 },
+        { maxKg: 3, price: 45 },
+        { maxKg: 5, price: 65 },
+        { maxKg: 10, price: 95 },
+        { maxKg: 20, price: 160 },
+        { maxKg: Infinity, price: 260 },
+    ],
+    avg: [
+        { maxKg: 1, price: 40 },
+        { maxKg: 3, price: 55 },
+        { maxKg: 5, price: 75 },
+        { maxKg: 10, price: 110 },
+        { maxKg: 20, price: 180 },
+        { maxKg: Infinity, price: 280 },
+    ],
+}
+
+const lookupLastMile = (weightKg: number, tiers: LastMileTier[]): number => {
+    if (weightKg <= 0) return 0
+    for (const t of tiers) {
+        if (weightKg <= t.maxKg) return t.price
+    }
+    return tiers[tiers.length - 1].price
+}
+
+const LAST_MILE_LABEL: Record<LastMileCarrier, string> = {
+    dhl: "DHL eCommerce",
+    shopee: "Shopee SPX Express",
+    avg: "ค่าเฉลี่ย (DHL + Shopee)",
+    custom: "กำหนดเอง",
+}
+
 const newItem = (): Item => ({
     id: Math.random().toString(36).slice(2, 9),
     name: "",
@@ -163,6 +219,18 @@ export function ShippingCalculator() {
     const [rates, setRates] = useState(RATE_TABLE_THB)
     const [useBaseRate, setUseBaseRate] = useState(true)
     const [extraCharges, setExtraCharges] = useState<ExtraCharge[]>([])
+
+    // Pricing & Cost state
+    const [costCurrency, setCostCurrency] = useState<Currency>("RMB")
+    const [costPerUnitSource, setCostPerUnitSource] = useState("")
+    const [commissionPct, setCommissionPct] = useState("5")
+    const [commissionFixed, setCommissionFixed] = useState("0")
+    const [vatPct, setVatPct] = useState("7")
+    const [lastMileCarrier, setLastMileCarrier] = useState<LastMileCarrier>("avg")
+    const [lastMileCustomPerUnit, setLastMileCustomPerUnit] = useState("")
+    const [sellingPriceTHB, setSellingPriceTHB] = useState("")
+    const [targetMarginPct, setTargetMarginPct] = useState("30")
+    const [quickCalcMode, setQuickCalcMode] = useState(false)
 
     const addExtraCharge = () => setExtraCharges((prev) => [...prev, newCharge()])
     const removeExtraCharge = (id: string) =>
@@ -308,6 +376,97 @@ export function ShippingCalculator() {
         useBaseRate,
     ])
 
+    const pricing = useMemo(() => {
+        const divisor = n(volumetricDivisor) || 167
+        const totalUnits = calculation.totalUnits
+        const costSourceRate = rateToTHB[costCurrency]
+        const costPerUnitTHB = n(costPerUnitSource) * costSourceRate
+
+        // Commission (% on cost) + fixed
+        const commissionAmount =
+            (costPerUnitTHB * n(commissionPct)) / 100 + n(commissionFixed)
+
+        // VAT applied on (cost + commission)
+        const vatBase = costPerUnitTHB + commissionAmount
+        const vatAmount = (vatBase * n(vatPct)) / 100
+
+        // Sea freight per unit (from shipping calc)
+        const seaFreightPerUnit =
+            totalUnits > 0 ? calculation.totalShippingTHB / totalUnits : 0
+
+        // Last-mile per unit: compute chargeable weight per unit then lookup
+        const cbmPerUnit = totalUnits > 0 ? calculation.totalCBM / totalUnits : 0
+        const actualWeightPerUnit =
+            totalUnits > 0 ? calculation.totalWeight / totalUnits : 0
+        const volumetricWeightPerUnit = cbmPerUnit * divisor
+        const chargeableWeightPerUnit = Math.max(
+            actualWeightPerUnit,
+            volumetricWeightPerUnit
+        )
+
+        let lastMilePerUnit = 0
+        if (lastMileCarrier === "custom") {
+            lastMilePerUnit = n(lastMileCustomPerUnit)
+        } else {
+            lastMilePerUnit = lookupLastMile(
+                chargeableWeightPerUnit,
+                LAST_MILE_RATES[lastMileCarrier]
+            )
+        }
+
+        const freightPortion = quickCalcMode
+            ? 0
+            : seaFreightPerUnit + lastMilePerUnit
+
+        const totalCostPerUnit =
+            costPerUnitTHB + commissionAmount + vatAmount + freightPortion
+
+        // Pricing sim
+        const price = n(sellingPriceTHB)
+        const profit = price - totalCostPerUnit
+        const marginPct = price > 0 ? (profit / price) * 100 : 0
+        const markupPct = totalCostPerUnit > 0 ? (profit / totalCostPerUnit) * 100 : 0
+
+        // Suggested price at target margin: price = cost / (1 - margin%)
+        const targetMargin = n(targetMarginPct)
+        const suggestedPrice =
+            targetMargin > 0 && targetMargin < 100
+                ? totalCostPerUnit / (1 - targetMargin / 100)
+                : totalCostPerUnit
+
+        return {
+            costPerUnitTHB,
+            commissionAmount,
+            vatAmount,
+            seaFreightPerUnit,
+            lastMilePerUnit,
+            chargeableWeightPerUnit,
+            cbmPerUnit,
+            totalCostPerUnit,
+            price,
+            profit,
+            marginPct,
+            markupPct,
+            suggestedPrice,
+            totalUnits,
+        }
+    }, [
+        calculation,
+        costCurrency,
+        costPerUnitSource,
+        commissionPct,
+        commissionFixed,
+        vatPct,
+        lastMileCarrier,
+        lastMileCustomPerUnit,
+        sellingPriceTHB,
+        targetMarginPct,
+        quickCalcMode,
+        volumetricDivisor,
+        rmbRate,
+        usdRate,
+    ])
+
     const buildSummaryText = () => {
         const sym = currencySymbol[displayCurrency]
         const lines: string[] = []
@@ -356,6 +515,57 @@ export function ShippingCalculator() {
         if (calculation.totalUnits > 0) {
             lines.push(
                 `Per Unit (${calculation.totalUnits} units):   ${sym}${fmt(toDisplay(calculation.costPerUnitTHB))} / unit`
+            )
+        }
+        // Pricing section
+        if (n(costPerUnitSource) > 0) {
+            lines.push("")
+            lines.push("COST & PRICING (per unit)")
+            lines.push("-".repeat(40))
+            lines.push(
+                `Product Cost:           ${sym}${fmt(toDisplay(pricing.costPerUnitTHB))}  (${costPerUnitSource} ${costCurrency})`
+            )
+            lines.push(
+                `Commission:             ${sym}${fmt(toDisplay(pricing.commissionAmount))}  (${commissionPct}% + ฿${commissionFixed})`
+            )
+            lines.push(
+                `VAT ${vatPct}%:                 ${sym}${fmt(toDisplay(pricing.vatAmount))}`
+            )
+            if (!quickCalcMode) {
+                lines.push(
+                    `Sea Freight:            ${sym}${fmt(toDisplay(pricing.seaFreightPerUnit))}`
+                )
+                lines.push(
+                    `Last-mile (${LAST_MILE_LABEL[lastMileCarrier]}): ${sym}${fmt(toDisplay(pricing.lastMilePerUnit))}`
+                )
+            } else {
+                lines.push(`[Quick Calc mode — Freight excluded]`)
+            }
+            lines.push(
+                `TOTAL COST / UNIT:      ${sym}${fmt(toDisplay(pricing.totalCostPerUnit))}`
+            )
+            if (pricing.price > 0) {
+                lines.push("")
+                lines.push(
+                    `Selling Price:          ${sym}${fmt(toDisplay(pricing.price))}`
+                )
+                lines.push(
+                    `Profit / Unit:          ${sym}${fmt(toDisplay(pricing.profit))}`
+                )
+                lines.push(
+                    `Margin:                 ${fmt(pricing.marginPct)}%`
+                )
+                lines.push(
+                    `Markup:                 ${fmt(pricing.markupPct)}%`
+                )
+                if (pricing.totalUnits > 0) {
+                    lines.push(
+                        `Total Profit (${pricing.totalUnits} units): ${sym}${fmt(toDisplay(pricing.profit * pricing.totalUnits))}`
+                    )
+                }
+            }
+            lines.push(
+                `Suggested @ ${targetMarginPct}% margin: ${sym}${fmt(toDisplay(pricing.suggestedPrice))}`
             )
         }
         if (calculation.productValue > 0) {
@@ -1040,6 +1250,335 @@ export function ShippingCalculator() {
                 </Card>
             )}
 
+            {/* Product Cost & Pricing */}
+            <Card>
+                <CardHeader className="space-y-3">
+                    <div className="flex flex-row items-start justify-between gap-2 flex-wrap">
+                        <div>
+                            <CardTitle className="text-base flex items-center gap-2">
+                                <Wallet className="h-4 w-4" /> 5. ต้นทุนสินค้า & ราคาขาย
+                            </CardTitle>
+                            <CardDescription>
+                                Product Cost, Commission, VAT, Shipping → คำนวณราคาขายและกำไร
+                            </CardDescription>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm rounded-md border px-3 py-2 bg-amber-50">
+                            <input
+                                id="quickCalc"
+                                type="checkbox"
+                                checked={quickCalcMode}
+                                onChange={(e) => setQuickCalcMode(e.target.checked)}
+                                className="h-4 w-4"
+                            />
+                            <label htmlFor="quickCalc" className="cursor-pointer flex items-center gap-1">
+                                <Bolt className="h-3.5 w-3.5 text-amber-600" />
+                                Quick Calc (คิดแค่ Commission + VAT)
+                            </label>
+                        </div>
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                    {/* Inputs */}
+                    <div className="grid gap-4 md:grid-cols-4">
+                        <div className="space-y-1">
+                            <Label className="text-xs">Cost Currency</Label>
+                            <Select
+                                value={costCurrency}
+                                onValueChange={(v) => setCostCurrency(v as Currency)}
+                            >
+                                <SelectTrigger className="bg-background">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="RMB">RMB (¥)</SelectItem>
+                                    <SelectItem value="USD">USD ($)</SelectItem>
+                                    <SelectItem value="THB">THB (฿)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-1 md:col-span-2">
+                            <Label className="text-xs flex items-center gap-1">
+                                <Tag className="h-3 w-3" /> ต้นทุนต่อหน่วย ({costCurrency})
+                            </Label>
+                            <Input
+                                type="number"
+                                inputMode="decimal"
+                                placeholder={`เช่น ${costCurrency === "RMB" ? "18" : costCurrency === "USD" ? "2.5" : "90"}`}
+                                value={costPerUnitSource}
+                                onChange={(e) => setCostPerUnitSource(e.target.value)}
+                            />
+                            {n(costPerUnitSource) > 0 && costCurrency !== "THB" && (
+                                <p className="text-[11px] text-muted-foreground">
+                                    = ฿{fmt(pricing.costPerUnitTHB)} / unit (rate 1 {costCurrency} = {costCurrency === "RMB" ? rmbRate : usdRate} THB)
+                                </p>
+                            )}
+                        </div>
+                        <div className="space-y-1">
+                            <Label className="text-xs">Units (จาก Items)</Label>
+                            <div className="h-10 px-3 py-2 rounded-md border bg-muted/30 text-sm flex items-center">
+                                {pricing.totalUnits > 0 ? (
+                                    `${pricing.totalUnits.toLocaleString()} units`
+                                ) : (
+                                    <span className="text-muted-foreground text-xs">
+                                        กรอก Units ใน Items
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="space-y-1">
+                            <Label className="text-xs flex items-center gap-1">
+                                <Percent className="h-3 w-3" /> Commission %
+                            </Label>
+                            <Input
+                                type="number"
+                                inputMode="decimal"
+                                value={commissionPct}
+                                onChange={(e) => setCommissionPct(e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <Label className="text-xs">Commission Fixed (THB/unit)</Label>
+                            <Input
+                                type="number"
+                                inputMode="decimal"
+                                value={commissionFixed}
+                                onChange={(e) => setCommissionFixed(e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <Label className="text-xs">VAT %</Label>
+                            <Input
+                                type="number"
+                                inputMode="decimal"
+                                value={vatPct}
+                                onChange={(e) => setVatPct(e.target.value)}
+                            />
+                            <p className="text-[10px] text-muted-foreground">คงที่ 7% (แก้ได้)</p>
+                        </div>
+                        <div className="space-y-1">
+                            <Label className="text-xs">Last-mile Carrier</Label>
+                            <Select
+                                value={lastMileCarrier}
+                                onValueChange={(v) => setLastMileCarrier(v as LastMileCarrier)}
+                                disabled={quickCalcMode}
+                            >
+                                <SelectTrigger className="bg-background">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {(Object.keys(LAST_MILE_LABEL) as LastMileCarrier[]).map(
+                                        (k) => (
+                                            <SelectItem key={k} value={k}>
+                                                {LAST_MILE_LABEL[k]}
+                                            </SelectItem>
+                                        )
+                                    )}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        {lastMileCarrier === "custom" && !quickCalcMode && (
+                            <div className="space-y-1 md:col-span-4">
+                                <Label className="text-xs">Custom Last-mile (THB/unit)</Label>
+                                <Input
+                                    type="number"
+                                    inputMode="decimal"
+                                    value={lastMileCustomPerUnit}
+                                    onChange={(e) => setLastMileCustomPerUnit(e.target.value)}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Rate reference table for last-mile */}
+                    {!quickCalcMode && lastMileCarrier !== "custom" && (
+                        <div className="rounded-md border bg-muted/10 p-3">
+                            <div className="text-xs font-medium mb-2 text-muted-foreground">
+                                อัตรา Last-mile ที่ใช้ ({LAST_MILE_LABEL[lastMileCarrier]})
+                            </div>
+                            <div className="flex flex-wrap gap-2 text-xs">
+                                {LAST_MILE_RATES[lastMileCarrier].map((t) => {
+                                    const isActive =
+                                        pricing.chargeableWeightPerUnit > 0 &&
+                                        pricing.chargeableWeightPerUnit <= t.maxKg &&
+                                        (LAST_MILE_RATES[lastMileCarrier].indexOf(t) === 0 ||
+                                            pricing.chargeableWeightPerUnit >
+                                                LAST_MILE_RATES[lastMileCarrier][
+                                                    LAST_MILE_RATES[lastMileCarrier].indexOf(t) - 1
+                                                ].maxKg)
+                                    return (
+                                        <span
+                                            key={t.maxKg}
+                                            className={`rounded px-2 py-1 border ${
+                                                isActive
+                                                    ? "bg-primary/10 border-primary text-primary font-semibold"
+                                                    : "bg-background border-border"
+                                            }`}
+                                        >
+                                            {t.maxKg === Infinity
+                                                ? "> 20kg"
+                                                : `≤ ${t.maxKg}kg`}{" "}
+                                            · ฿{t.price}
+                                        </span>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Cost Breakdown per unit */}
+                    {n(costPerUnitSource) > 0 && (
+                        <div className="rounded-md border bg-muted/10">
+                            <div className="px-4 py-2 border-b text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center justify-between">
+                                <span>Cost Breakdown (per unit)</span>
+                                {quickCalcMode && (
+                                    <Badge variant="secondary" className="text-[10px]">
+                                        Quick mode · ไม่รวม Freight
+                                    </Badge>
+                                )}
+                            </div>
+                            <div className="divide-y text-sm">
+                                <CostRow label="Product Cost" note={`${costPerUnitSource || 0} ${costCurrency}`} amount={pricing.costPerUnitTHB} sym={sym} toDisplay={toDisplay} />
+                                <CostRow
+                                    label="Commission"
+                                    note={`${commissionPct}% + ฿${commissionFixed} fixed`}
+                                    amount={pricing.commissionAmount}
+                                    sym={sym}
+                                    toDisplay={toDisplay}
+                                />
+                                <CostRow
+                                    label={`VAT ${vatPct}%`}
+                                    note="on (cost + commission)"
+                                    amount={pricing.vatAmount}
+                                    sym={sym}
+                                    toDisplay={toDisplay}
+                                />
+                                {!quickCalcMode && (
+                                    <>
+                                        <CostRow
+                                            label="Sea Freight"
+                                            note={`share of total shipping / ${pricing.totalUnits || 0} units`}
+                                            amount={pricing.seaFreightPerUnit}
+                                            sym={sym}
+                                            toDisplay={toDisplay}
+                                        />
+                                        <CostRow
+                                            label="Last-mile Delivery"
+                                            note={`${LAST_MILE_LABEL[lastMileCarrier]} · chargeable wt ${fmt(pricing.chargeableWeightPerUnit)} kg/unit`}
+                                            amount={pricing.lastMilePerUnit}
+                                            sym={sym}
+                                            toDisplay={toDisplay}
+                                        />
+                                    </>
+                                )}
+                                <div className="flex justify-between px-4 py-3 bg-primary/5">
+                                    <span className="font-semibold">Total Cost / Unit</span>
+                                    <span className="font-bold text-primary">
+                                        {sym}
+                                        {fmt(toDisplay(pricing.totalCostPerUnit))}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Pricing Simulation */}
+                    {n(costPerUnitSource) > 0 && (
+                        <div className="rounded-lg border p-4 bg-gradient-to-br from-emerald-50 to-background">
+                            <div className="flex items-center gap-2 mb-3">
+                                <TrendingUp className="h-4 w-4 text-emerald-600" />
+                                <h3 className="font-semibold">Pricing Simulation</h3>
+                            </div>
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <div className="space-y-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">ราคาขาย (THB/unit)</Label>
+                                        <Input
+                                            type="number"
+                                            inputMode="decimal"
+                                            placeholder="e.g. 199"
+                                            value={sellingPriceTHB}
+                                            onChange={(e) => setSellingPriceTHB(e.target.value)}
+                                            className="text-lg font-semibold"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <ProfitTile
+                                            label="Profit / Unit"
+                                            value={
+                                                pricing.price > 0
+                                                    ? `${sym}${fmt(toDisplay(pricing.profit))}`
+                                                    : "—"
+                                            }
+                                            positive={pricing.profit > 0}
+                                        />
+                                        <ProfitTile
+                                            label="Margin"
+                                            value={
+                                                pricing.price > 0
+                                                    ? `${fmt(pricing.marginPct)}%`
+                                                    : "—"
+                                            }
+                                            positive={pricing.marginPct > 0}
+                                        />
+                                        <ProfitTile
+                                            label="Markup"
+                                            value={
+                                                pricing.price > 0
+                                                    ? `${fmt(pricing.markupPct)}%`
+                                                    : "—"
+                                            }
+                                            positive={pricing.markupPct > 0}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">ต้องการ Margin กี่ %</Label>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                type="number"
+                                                inputMode="decimal"
+                                                value={targetMarginPct}
+                                                onChange={(e) => setTargetMarginPct(e.target.value)}
+                                                className="w-24"
+                                            />
+                                            <div className="flex-1 h-10 rounded-md border bg-background px-3 flex items-center justify-between">
+                                                <span className="text-xs text-muted-foreground">
+                                                    แนะนำราคาขาย
+                                                </span>
+                                                <span className="font-bold text-emerald-700">
+                                                    {sym}
+                                                    {fmt(toDisplay(pricing.suggestedPrice))}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground space-y-1 pt-1">
+                                        <div>
+                                            ต้นทุนต่อหน่วย: {sym}
+                                            {fmt(toDisplay(pricing.totalCostPerUnit))}
+                                        </div>
+                                        <div>
+                                            Break-even: {sym}
+                                            {fmt(toDisplay(pricing.totalCostPerUnit))} (ราคาขาย = ต้นทุน)
+                                        </div>
+                                        {pricing.totalUnits > 0 && (
+                                            <div>
+                                                กำไรรวม {pricing.totalUnits} units: {sym}
+                                                {fmt(toDisplay(pricing.profit * pricing.totalUnits))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
             {/* Summary */}
             <Card className="border-primary/30 shadow-md">
                 <CardHeader className="flex flex-row items-start justify-between space-y-0">
@@ -1199,6 +1738,69 @@ function Metric({
                     <span className="text-[10px] font-normal text-muted-foreground">{unit}</span>
                 )}
             </span>
+        </div>
+    )
+}
+
+function CostRow({
+    label,
+    note,
+    amount,
+    sym,
+    toDisplay,
+}: {
+    label: string
+    note?: string
+    amount: number
+    sym: string
+    toDisplay: (thb: number) => number
+}) {
+    return (
+        <div className="flex justify-between px-4 py-2">
+            <span>
+                {label}
+                {note && (
+                    <span className="text-xs text-muted-foreground ml-1">({note})</span>
+                )}
+            </span>
+            <span className="font-medium">
+                {sym}
+                {toDisplay(amount).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                })}
+            </span>
+        </div>
+    )
+}
+
+function ProfitTile({
+    label,
+    value,
+    positive,
+}: {
+    label: string
+    value: string
+    positive: boolean
+}) {
+    return (
+        <div
+            className={`rounded-md border p-2 text-center ${
+                positive
+                    ? "bg-emerald-50 border-emerald-200"
+                    : "bg-rose-50 border-rose-200"
+            }`}
+        >
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {label}
+            </div>
+            <div
+                className={`text-sm font-bold ${
+                    positive ? "text-emerald-700" : "text-rose-700"
+                }`}
+            >
+                {value}
+            </div>
         </div>
     )
 }
