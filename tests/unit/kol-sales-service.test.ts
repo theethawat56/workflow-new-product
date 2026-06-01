@@ -1,6 +1,6 @@
 
-import { getKolSalesData } from "@/features/kolSalesDashboard/service"
-import { DashboardFilters } from "@/features/kolSalesDashboard/types"
+import { getKolSalesDataV2 as getKolSalesData } from "@/features/kolSalesDashboardV2/service"
+import { DashboardFilters } from "@/features/kolSalesDashboardV2/types"
 
 // Mock Data Source
 jest.mock("@/lib/workspace/data-source", () => ({
@@ -36,19 +36,17 @@ describe("KOL Sales Service", () => {
         dateRange: { from: "2024-01-01", to: "2024-01-31" },
         selectedSkus: [],
         selectedPics: [],
-        selectedProductNames: [],
         selectedChannels: [],
-        selectedBudgetTypes: [],
-        attributionWindowDays: 7, // 7 days window
-        attributionModel: "SPLIT"
+        mode: "ATTRIBUTION",
+        attributionWindow: 7 // 7 days window
     }
 
     it("should calculate KPI correctly", async () => {
         const data = await getKolSalesData(baseFilters)
 
-        expect(data.kpi.totalRevenue).toBe(15000) // 2000 + 3000 + 10000
-        expect(data.kpi.totalBudget).toBe(6000) // 1000 + 0 + 5000
-        expect(data.kpi.totalKolPosts).toBe(3)
+        expect(data.kpis.totalRevenue).toBe(15000) // 2000 + 3000 + 10000
+        expect(data.kpis.totalBudget).toBe(6000) // 1000 + 0 + 5000
+        expect(data.kpis.totalPosts).toBe(3)
         // Check attribution
         // Sale 1 (Jan 2): Matches KOL1 (Jan 1) -> Diff 1. Attribution: 2000
         // Sale 2 (Jan 6): Matches KOL2 (Jan 5) -> Diff 1. Also KOL1 (Jan 1) -> Diff 5.
@@ -56,11 +54,11 @@ describe("KOL Sales Service", () => {
         // Sale 3 (Jan 15): Matches KOL3 (Jan 10) -> Diff 5. Attribution: 10000
 
         // Total Attributed = 2000 + 3000 + 10000 = 15000
-        expect(data.kpi.attributedRevenue).toBe(15000)
+        expect(data.kpis.attributedRevenue).toBe(15000)
     })
 
     it("should handle tight attribution window", async () => {
-        const filters = { ...baseFilters, attributionWindowDays: 1 }
+        const filters = { ...baseFilters, attributionWindow: 1 }
         const data = await getKolSalesData(filters)
 
         // Sale 1 (Jan 2): Matches KOL1 (Jan 1) -> Diff 1. OK. (2000)
@@ -70,11 +68,11 @@ describe("KOL Sales Service", () => {
         //    No attribution.
 
         // Total Attr = 2000 + 3000 = 5000
-        expect(data.kpi.attributedRevenue).toBe(5000)
+        expect(data.kpis.attributedRevenue).toBe(5000)
     })
 
     it("should support FULL attribution model", async () => {
-        const filters = { ...baseFilters, attributionModel: "FULL" as const }
+        const filters = { ...baseFilters, mode: "PERIOD" as const }
         // Default window 7 days
         const data = await getKolSalesData(filters)
 

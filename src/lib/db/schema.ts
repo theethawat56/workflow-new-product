@@ -187,6 +187,53 @@ export const SHEETS_CONFIG = {
             "Avg Selling Price"
         ]
     },
+    sales_orders: {
+        name: "sales_orders",
+        headers: [
+            "row_id",
+            "order_id",
+            "order_number",
+            "order_date",
+            "success_date",
+            "status",
+            "payment_status",
+            "channel_raw",
+            "marketplace_name",
+            "integration_name",
+            "sku",
+            "product_name",
+            "is_bundle",
+            "quantity",
+            "unit_price",
+            "unit_price_pretax",
+            "line_total",
+            "line_total_pretax",
+            "line_discount",
+            "synced_at",
+        ],
+    },
+    sync_state: {
+        name: "sync_state",
+        headers: ["key", "value", "updated_at"],
+    },
+    product_decisions: {
+        name: "product_decisions",
+        headers: ["sku", "status", "note", "decided_at", "updated_by", "updated_at"],
+    },
+    po_costs: {
+        name: "po_costs",
+        headers: [
+            "sku",
+            "product_name",
+            "total_qty",
+            "total_value_pretax",
+            "weighted_avg_cost",
+            "latest_po_date",
+            "earliest_po_date",
+            "po_count",
+            "synced_at",
+        ],
+    },
     stock_at: {
         name: "Stock_AT",
         headers: [

@@ -38,6 +38,7 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
         { href: "/dashboard/kol-sales", label: "KOL Attribution", icon: BarChart2, exact: true },
         { href: "/dashboard/target", label: "Target (2026)", icon: Disc },
         { href: "/dashboard/sales", label: "Sales", icon: DollarSign },
+        { href: "/dashboard/cohort-growth", label: "Cohort Growth", icon: BarChart },
         { href: "/dashboard/shipping-calculator", label: "Shipping Calculator", icon: Calculator },
         { href: "/dashboard/launch", label: "Launch Control", icon: Rocket },
         { href: "/products/pipeline", label: "New Products", icon: Package },

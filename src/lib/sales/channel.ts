@@ -1,0 +1,42 @@
+/** Channel classification + deduction rates for Net GP on sales dashboards. */
+
+export type ChannelCategory = "MARKETPLACE" | "DIRECT" | "OTHER"
+
+export interface ChannelClassification {
+    channel: string
+    category: ChannelCategory
+    deduction: number
+}
+
+const MARKETPLACE_DEDUCTION = 0.32
+const DIRECT_DEDUCTION = 0.19
+
+export function classifyOrderChannel(
+    salesChannel: string | undefined,
+    marketplaceName?: string,
+    integrationName?: string,
+): ChannelClassification {
+    const raw = ((salesChannel ?? "") || (marketplaceName ?? "") || (integrationName ?? ""))
+        .toString()
+        .trim()
+    const lower = raw.toLowerCase()
+
+    if (/shopee/.test(lower))
+        return { channel: "Shopee", category: "MARKETPLACE", deduction: MARKETPLACE_DEDUCTION }
+    if (/lazada/.test(lower))
+        return { channel: "Lazada", category: "MARKETPLACE", deduction: MARKETPLACE_DEDUCTION }
+    if (/tiktok/.test(lower))
+        return { channel: "TikTok", category: "MARKETPLACE", deduction: MARKETPLACE_DEDUCTION }
+    if (/wfm|งานซ่อม|งานเคลม|claim|review|ของแถม|ฝากขาย/.test(lower))
+        return { channel: "Service/Claim", category: "OTHER", deduction: 0 }
+    if (/line/.test(lower))
+        return { channel: "Line", category: "DIRECT", deduction: DIRECT_DEDUCTION }
+    if (/facebook|fb\b/.test(lower))
+        return { channel: "Facebook", category: "DIRECT", deduction: DIRECT_DEDUCTION }
+    if (/pos|dataslot|เงินสด|cash/.test(lower))
+        return { channel: "POS/Cash", category: "DIRECT", deduction: DIRECT_DEDUCTION }
+    if (/sale\s*online|direct/.test(lower))
+        return { channel: "Direct Online", category: "DIRECT", deduction: DIRECT_DEDUCTION }
+    if (raw) return { channel: raw, category: "DIRECT", deduction: DIRECT_DEDUCTION }
+    return { channel: "Unknown", category: "DIRECT", deduction: DIRECT_DEDUCTION }
+}
