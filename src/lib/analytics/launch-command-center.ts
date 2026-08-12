@@ -984,13 +984,12 @@ async function fetchLaunchDataDirect() {
         readTab("products").catch(() => [] as Record<string, string>[]),
     ])
 
-    const { stockBySku, lots } = parseStockLots(stockRaw)
+    const { lots } = parseStockLots(stockRaw)
     const launchedProducts = parseLaunchedProducts(launchedRaw)
     return {
         sales: parseSales(salesRaw),
         costs: parseCosts(costRaw),
         kolPosts: parseKolPosts(kolRaw),
-        stockBySku,
         lots,
         master: parseProductMaster(masterRaw),
         launchDates: parseLaunched(launchedRaw),
@@ -1002,8 +1001,8 @@ async function fetchLaunchDataDirect() {
 
 const getCachedLaunchData = unstable_cache(
     fetchLaunchDataDirect,
-    // v4: stock/launch Maps → Records (JSON-safe; Maps were wiping Current Stock)
-    ["launch-command-center-raw-v4"],
+    // v5: stock qty read fresh in loadLaunchCommandCenter (not from cache)
+    ["launch-command-center-raw-v5"],
     { revalidate: 1800, tags: ["analytics-data", "launch-command-center"] },
 )
 
@@ -1017,7 +1016,9 @@ export async function loadLaunchCommandCenter(
         raw = await fetchLaunchDataDirect()
     }
 
-    const stockBySku = toStockQtyMap(raw.stockBySku)
+    // Fresh Stock_AT read every time (Current Stock must not come from cache)
+    const stockRaw = await readTab("Stock_AT")
+    const stockBySku = toStockQtyMap(buildStockQtyRecord(stockRaw))
     const launchDates = new Map(Object.entries(raw.launchDates ?? {}))
 
     const costMap = new Map(raw.costs.map((c) => [c.sku.toUpperCase(), c]))

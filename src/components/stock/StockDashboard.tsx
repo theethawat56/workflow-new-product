@@ -4,34 +4,63 @@ import { useState, useMemo } from "react"
 import { AlertTriangle, Package, CheckCircle, XCircle, TrendingDown, Clock, Filter, Search, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
 
-interface StockItem {
-    STATUS: string
-    SKU: string
-    "Product Name": string
-    "Current Stock": string | number
-    "Safety Stock pcs": string | number
-    "Day inventory outstanding": string | number
-}
+/** Accept normalized + raw Stock_AT shapes (ATB / Item name / Current Stock). */
+type StockItem = Record<string, unknown>
 
 interface Props {
     items: StockItem[]
 }
 
-function parseNum(val: string | number): number {
+function parseNum(val: unknown): number {
     const n = Number(String(val ?? "").replace(/,/g, "").trim())
     return isNaN(n) ? 0 : n
 }
 
+function itemSku(item: StockItem): string {
+    return String(item.SKU ?? item.sku ?? item.ATB ?? item["ATB Code"] ?? "").trim()
+}
+
+function itemName(item: StockItem): string {
+    return String(
+        item.productName ??
+            item["Product Name"] ??
+            item["Item name"] ??
+            item["Item Name"] ??
+            item.Name ??
+            "",
+    ).trim()
+}
+
+function itemStatus(item: StockItem): string {
+    return String(item.STATUS ?? item.Status ?? item.status ?? "").trim()
+}
+
+function itemCurrentStock(item: StockItem): number {
+    return parseNum(
+        item.currentStock ?? item["Current Stock"] ?? item.current_stock,
+    )
+}
+
+function itemSafety(item: StockItem): number {
+    return parseNum(item.safetyStockPcs ?? item["Safety Stock pcs"] ?? item["Safety Stock"])
+}
+
+function itemDio(item: StockItem): number {
+    return parseNum(
+        item.dio ?? item["Day inventory outstanding"] ?? item.DIO,
+    )
+}
+
 // Only show items with a non-empty STATUS column
 function hasStatus(item: StockItem): boolean {
-    return !!(item.STATUS && String(item.STATUS).trim() !== "")
+    return itemStatus(item) !== ""
 }
 
 // Auto-calculate status from Current Stock vs Safety Stock pcs + DIO
 function calcStatus(item: StockItem): "oos" | "low" | "ok" {
-    const stock = parseNum(item["Current Stock"])
-    const safety = parseNum(item["Safety Stock pcs"])
-    const dio = parseNum(item["Day inventory outstanding"])
+    const stock = itemCurrentStock(item)
+    const safety = itemSafety(item)
+    const dio = itemDio(item)
 
     if (stock <= 0 || dio <= 0) return "oos"
     if (stock <= safety) return "low"
@@ -91,9 +120,11 @@ const STATUS_CONFIG: Record<StatusKey, {
 
 function StockCard({ item }: { item: StockItem & { _status: StatusKey } }) {
     const cfg = STATUS_CONFIG[item._status]
-    const stock = parseNum(item["Current Stock"])
-    const safety = parseNum(item["Safety Stock pcs"])
-    const dio = parseNum(item["Day inventory outstanding"])
+    const stock = itemCurrentStock(item)
+    const safety = itemSafety(item)
+    const dio = itemDio(item)
+    const sku = itemSku(item)
+    const name = itemName(item)
 
     return (
         <div className={`rounded-xl border-2 ${cfg.bg} overflow-hidden shadow-sm flex flex-col`}>
@@ -106,13 +137,13 @@ function StockCard({ item }: { item: StockItem & { _status: StatusKey } }) {
                         {cfg.label}
                     </span>
                     <span className="text-[10px] text-muted-foreground font-mono bg-white/70 border rounded px-1.5 py-0.5 shrink-0">
-                        {item.SKU || "—"}
+                        {sku || "—"}
                     </span>
                 </div>
 
                 {/* Product name */}
                 <p className="text-sm font-semibold leading-tight line-clamp-2">
-                    {item["Product Name"] || "—"}
+                    {name || "—"}
                 </p>
 
                 {/* Current Stock — big number */}
@@ -178,8 +209,8 @@ export function StockDashboard({ items }: Props) {
         return validItems
             .filter(item =>
                 !q ||
-                (item["Product Name"] || "").toLowerCase().includes(q) ||
-                (item.SKU || "").toLowerCase().includes(q)
+                itemName(item).toLowerCase().includes(q) ||
+                itemSku(item).toLowerCase().includes(q)
             )
             .map(item => ({ ...item, _status: calcStatus(item) as StatusKey }))
             .sort((a, b) => {
@@ -191,7 +222,7 @@ export function StockDashboard({ items }: Props) {
     const oosItems = enriched.filter(i => i._status === "oos")
     const lowItems = enriched.filter(i => i._status === "low")
     const okItems = enriched.filter(i => i._status === "ok")
-    const totalUnits = enriched.reduce((s, i) => s + parseNum(i["Current Stock"]), 0)
+    const totalUnits = enriched.reduce((s, i) => s + itemCurrentStock(i), 0)
 
     const handleKpiClick = (key: StatusKey) => {
         setActiveFilter(prev => prev === key ? null : key)

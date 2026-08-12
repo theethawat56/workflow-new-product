@@ -7,7 +7,7 @@ import "server-only"
 import { unstable_cache } from "next/cache"
 import { google } from "googleapis"
 import { classifyOrderChannel } from "@/lib/sales/channel"
-import { buildStockQtyRecord, toStockQtyMap } from "@/lib/stock/stock-at-columns"
+import { buildStockQtyRecord, lookupStockQty, toStockQtyMap } from "@/lib/stock/stock-at-columns"
 import {
     CORE_WINNER_SEEDS,
     DEFAULT_LEAD_TIME,
@@ -115,13 +115,6 @@ function parseCosts(raw: Record<string, string>[]): PoCostRow[] {
     }))
 }
 
-function parseStockAt(raw: Record<string, string>[]): Record<string, number> {
-    // Stock_AT SKU col is `ATB` (was `SKU`); qty is always `Current Stock`.
-    // Return a plain Record so unstable_cache JSON round-trips correctly
-    // (Map serializes to {} and wiped stock on every analytics page).
-    return buildStockQtyRecord(raw)
-}
-
 function parseLaunchedProducts(
     raw: Record<string, string>[],
 ): Record<string, LaunchRef> {
@@ -138,16 +131,16 @@ function parseLaunchedProducts(
 }
 
 async function fetchRawSheetsDirect() {
-    const [salesRaw, costRaw, stockRaw, launchedRaw] = await Promise.all([
+    const [salesRaw, costRaw, launchedRaw] = await Promise.all([
         readTab("sales_orders"),
         readTab("po_costs"),
-        readTab("Stock_AT"),
         readTab("launched_products"),
     ])
     return {
         sales: parseSales(salesRaw),
         costs: parseCosts(costRaw),
-        stockBySku: parseStockAt(stockRaw),
+        // Stock_AT is fetched fresh in loadRawSheets — never cache it.
+        // (Map/empty-parser cache previously wiped Current Stock on every page.)
         launchedBySku: parseLaunchedProducts(launchedRaw),
         loadedAt: new Date().toISOString(),
     }
@@ -155,26 +148,24 @@ async function fetchRawSheetsDirect() {
 
 const getCachedRawSheets = unstable_cache(
     fetchRawSheetsDirect,
-    // v2: Records instead of Maps (Maps JSON-serialize to {} and wipe Current Stock)
-    ["robotmaker-analytics-raw-v2"],
+    // v3: stock fetched fresh each request (not cached)
+    ["robotmaker-analytics-raw-v3"],
     { revalidate: 3600, tags: ["analytics-data"] },
 )
 
 async function loadRawSheets() {
+    let raw
     try {
-        const raw = await getCachedRawSheets()
-        return {
-            ...raw,
-            stockBySku: toStockQtyMap(raw.stockBySku),
-            launchedBySku: new Map(Object.entries(raw.launchedBySku ?? {})),
-        }
+        raw = await getCachedRawSheets()
     } catch {
-        const raw = await fetchRawSheetsDirect()
-        return {
-            ...raw,
-            stockBySku: toStockQtyMap(raw.stockBySku),
-            launchedBySku: new Map(Object.entries(raw.launchedBySku ?? {})),
-        }
+        raw = await fetchRawSheetsDirect()
+    }
+    // Always read Stock_AT fresh — never from unstable_cache.
+    const stockRaw = await readTab("Stock_AT")
+    return {
+        ...raw,
+        stockBySku: toStockQtyMap(buildStockQtyRecord(stockRaw)),
+        launchedBySku: new Map(Object.entries(raw.launchedBySku ?? {})),
     }
 }
 
@@ -258,7 +249,7 @@ export function computeStockMetrics(
         .reduce((s, r) => s + r.quantity, 0)
 
     const normalizedSku = sku.trim().toUpperCase()
-    const sheetStock = stockBySku.get(normalizedSku)
+    const sheetStock = lookupStockQty(stockBySku, normalizedSku)
 
     return {
         sku,
