@@ -1,11 +1,9 @@
 /**
- * Backtest Stock_AT "Current Stock" column mapping across app readers.
- *
- * Verifies:
- *  1. Live sheet still has a header named "Current Stock"
- *  2. SKU column is `ATB` (not `SKU`)
- *  3. Helpers resolve the same qty as direct column-P reads
- *  4. Old r.SKU-only parsers would match 0 rows (regression check)
+ * Backtest Stock_AT "Current Stock" end-to-end:
+ *  1. Live header / ATB rename
+ *  2. Helper qty == direct column value
+ *  3. Simulate Next.js unstable_cache JSON round-trip (Map → {} bug)
+ *  4. Cohort / sales SKU join after variant indexing
  *
  * Run: npx tsx scripts/backtest-stock-at-current.ts
  */
@@ -14,10 +12,13 @@ dotenv.config({ path: ".env.local" })
 
 import { getReadOnlySheetsClient } from "../src/lib/google/sheets-readonly"
 import {
+    buildStockQtyRecord,
     normalizeStockAtRow,
     stockAtCurrent,
     stockAtSku,
+    toStockQtyMap,
 } from "../src/lib/stock/stock-at-columns"
+import { NEW_2025_SKUS, NEW_2026_SKUS } from "../src/lib/analytics/constants"
 
 async function main() {
     const client = await getReadOnlySheetsClient()
@@ -36,23 +37,17 @@ async function main() {
     const csIdx = headers.indexOf("Current Stock")
     const atbIdx = headers.indexOf("ATB")
     const skuIdx = headers.indexOf("SKU")
-    const nameIdx = headers.indexOf("Item name")
-    const oldNameIdx = headers.indexOf("Product Name")
 
-    console.log("=== Stock_AT header check ===")
-    console.log(`  columns: ${headers.length}`)
-    console.log(`  "Current Stock" index: ${csIdx} (${csIdx >= 0 ? String.fromCharCode(65 + (csIdx % 26)) : "MISSING"})`)
-    console.log(`  "ATB" index: ${atbIdx}`)
-    console.log(`  "SKU" index: ${skuIdx} (expected -1 after rename)`)
-    console.log(`  "Item name" index: ${nameIdx}`)
-    console.log(`  "Product Name" index: ${oldNameIdx}`)
+    console.log("=== 1) Header check ===")
+    console.log(`  Current Stock @ ${csIdx} (col ${csIdx >= 0 ? String.fromCharCode(65 + csIdx) : "?"})`)
+    console.log(`  ATB @ ${atbIdx} | SKU @ ${skuIdx}`)
 
     if (csIdx < 0) {
-        console.error("FAIL: Current Stock column missing from Stock_AT")
+        console.error("FAIL: Current Stock column missing")
         process.exit(1)
     }
-    if (atbIdx < 0 && skuIdx < 0) {
-        console.error("FAIL: neither ATB nor SKU column present")
+    if (atbIdx < 0) {
+        console.error("FAIL: ATB column missing")
         process.exit(1)
     }
 
@@ -60,74 +55,73 @@ async function main() {
         Object.fromEntries(headers.map((h, i) => [h, row[i] ?? ""])),
     )
 
-    let helperMatches = 0
-    let helperMismatch = 0
-    let oldSkuMatches = 0
-    let newSkuMatches = 0
-    const samples: string[] = []
-
+    let helperOk = 0
+    let helperBad = 0
+    let oldSkuHits = 0
     for (const r of rows) {
-        const directQty = Number(String(r["Current Stock"] ?? "").replace(/,/g, "")) || 0
-        const helperSku = stockAtSku(r)
-        const helperQty = stockAtCurrent(r)
-        const oldSku = String(r.SKU ?? "").trim().toUpperCase()
-
-        if (oldSku) oldSkuMatches++
-        if (helperSku) newSkuMatches++
-
-        if (!helperSku) continue
-        if (helperQty === directQty) helperMatches++
-        else {
-            helperMismatch++
-            samples.push(`  MISMATCH ${helperSku}: helper=${helperQty} direct=${directQty}`)
-        }
+        if (String(r.SKU ?? "").trim()) oldSkuHits++
+        const sku = stockAtSku(r)
+        if (!sku) continue
+        const direct = Number(String(r["Current Stock"] ?? "").replace(/,/g, "")) || 0
+        if (stockAtCurrent(r) === direct) helperOk++
+        else helperBad++
     }
 
+    console.log("\n=== 2) Parser ===")
+    console.log(`  old r.SKU hits: ${oldSkuHits} (expect 0)`)
+    console.log(`  Current Stock helper matches: ${helperOk} ok / ${helperBad} bad`)
+
+    // 3) Cache round-trip simulation
+    const record = buildStockQtyRecord(rows)
+    const mapBefore = new Map(Object.entries(record))
+    const brokenAfterCache = JSON.parse(JSON.stringify(mapBefore)) // Map → {}
+    const fixedAfterCache = JSON.parse(JSON.stringify(record)) // Record survives
+    const revived = toStockQtyMap(fixedAfterCache)
+
+    console.log("\n=== 3) unstable_cache JSON round-trip ===")
+    console.log(`  Map after JSON: keys=${Object.keys(brokenAfterCache).length}  ← BUG if 0`)
+    console.log(`  Record after JSON: keys=${Object.keys(fixedAfterCache).length}`)
+    console.log(`  revived Map size (with variants): ${revived.size}`)
+    console.log(`  sample ATB92049=${revived.get("ATB92049")} ATB092123=${revived.get("ATB092123")}`)
+    console.log(`  variant ATB92119=${revived.get("ATB92119")} ATB092119=${revived.get("ATB092119")}`)
+
+    // 4) Cohort join
+    const cohort = [...NEW_2025_SKUS, ...NEW_2026_SKUS].map((s) => s.toUpperCase())
+    let matched = 0
+    const misses: string[] = []
+    for (const sku of cohort) {
+        if (revived.has(sku)) matched++
+        else misses.push(sku)
+    }
+    console.log("\n=== 4) Cohort join ===")
+    console.log(`  matched ${matched}/${cohort.length}`)
+    if (misses.length) console.log(`  misses: ${misses.join(", ")}`)
+
     const normalized = rows.map(normalizeStockAtRow).filter((r) => r.SKU)
-    const withStock = normalized.filter((r) => r["Current Stock"] !== 0 || String(rows.find((x) => stockAtSku(x) === r.SKU)?.["Current Stock"] ?? "").trim() !== "")
-
-    console.log("\n=== Parser backtest ===")
-    console.log(`  rows: ${rows.length}`)
-    console.log(`  old r.SKU matches: ${oldSkuMatches}  ← broken if 0 after rename`)
-    console.log(`  new ATB/SKU helper matches: ${newSkuMatches}`)
-    console.log(`  Current Stock helper == direct col: ${helperMatches} ok / ${helperMismatch} mismatch`)
-    console.log(`  normalizeStockAtRow SKUs: ${normalized.length}`)
-
-    console.log("\n=== Sample (first 12 with SKU) ===")
-    console.log("SKU | Current Stock | Product Name | STATUS")
-    for (const r of normalized.slice(0, 12)) {
+    console.log("\n=== 5) /stock page sample ===")
+    for (const r of normalized.slice(0, 8)) {
         console.log(
-            `  ${r.SKU.padEnd(12)} | ${String(r["Current Stock"]).padStart(6)} | ${(r["Product Name"] || "—").slice(0, 28).padEnd(28)} | ${r.STATUS}`,
+            `  ${r.SKU.padEnd(12)} Current Stock=${String(r["Current Stock"]).padStart(5)}  ${r["Product Name"]}`,
         )
     }
 
-    if (samples.length) {
-        console.log("\nMismatches:")
-        console.log(samples.slice(0, 10).join("\n"))
-    }
-
-    const ok =
+    const pass =
         csIdx >= 0 &&
-        newSkuMatches > 0 &&
-        helperMismatch === 0 &&
-        (atbIdx >= 0 ? oldSkuMatches === 0 || true : true) &&
-        withStock.length > 0
+        atbIdx >= 0 &&
+        oldSkuHits === 0 &&
+        helperBad === 0 &&
+        helperOk > 0 &&
+        Object.keys(brokenAfterCache).length === 0 &&
+        Object.keys(fixedAfterCache).length > 0 &&
+        revived.size > 0 &&
+        matched === cohort.length &&
+        revived.get("ATB92049") === 300
 
-    // Explicit regression: if sheet uses ATB, old SKU-only parser must be empty
-    if (atbIdx >= 0 && skuIdx < 0 && oldSkuMatches !== 0) {
-        console.error("Unexpected: SKU header gone but r.SKU still matched")
-        process.exit(1)
-    }
-    if (atbIdx >= 0 && skuIdx < 0 && oldSkuMatches === 0 && newSkuMatches === 0) {
-        console.error("FAIL: helpers did not pick up ATB column")
-        process.exit(1)
-    }
-    if (!ok || helperMismatch > 0 || newSkuMatches === 0) {
+    if (!pass) {
         console.error("\nFAIL")
         process.exit(1)
     }
-
-    console.log("\nPASS — Current Stock column resolved correctly via header name + ATB SKU key")
+    console.log("\nPASS — Current Stock reads correctly; Record cache keeps qty; Map cache would wipe it")
 }
 
 main().catch((e) => {

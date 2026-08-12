@@ -10,9 +10,10 @@ import { unstable_cache } from "next/cache"
 import { google } from "googleapis"
 import { classifyOrderChannel } from "@/lib/sales/channel"
 import {
-    stockAtCurrent,
+    buildStockQtyRecord,
     stockAtInTransit,
     stockAtSku,
+    toStockQtyMap,
 } from "@/lib/stock/stock-at-columns"
 
 // ─── SKU → product group (37 SKU → 30 groups; colours merged) ───────────────
@@ -305,14 +306,23 @@ async function fetchWhatIfDirect(): Promise<WhatIfData> {
     }
 
     // ── stock qty from Stock_AT (qty only — COGS always from po_costs) ──
-    const stockBySku = new Map<string, { current: number; inTransit: number }>()
+    const stockQty = toStockQtyMap(buildStockQtyRecord(stockRaw))
+    const inTransitRaw = new Map<string, number>()
     for (const r of stockRaw) {
         const sku = stockAtSku(r)
         if (!sku) continue
-        const prev = stockBySku.get(sku) ?? { current: 0, inTransit: 0 }
-        prev.current += stockAtCurrent(r)
-        prev.inTransit += stockAtInTransit(r)
-        stockBySku.set(sku, prev)
+        inTransitRaw.set(sku, (inTransitRaw.get(sku) ?? 0) + stockAtInTransit(r))
+    }
+    const stockBySku = new Map<string, { current: number; inTransit: number }>()
+    for (const [sku, current] of stockQty) {
+        const inTransit = inTransitRaw.get(sku) ?? 0
+        stockBySku.set(sku, { current, inTransit })
+    }
+    // Ensure primary ATB keys from sheet also carry their own in-transit
+    for (const [sku, inTransit] of inTransitRaw) {
+        const cur = stockBySku.get(sku)
+        if (cur) cur.inTransit = inTransit
+        else stockBySku.set(sku, { current: stockQty.get(sku) ?? 0, inTransit })
     }
 
     // ── forecast tab defaults (optional) ──
@@ -423,7 +433,7 @@ async function fetchWhatIfDirect(): Promise<WhatIfData> {
     }
 }
 
-const getCachedWhatIf = unstable_cache(fetchWhatIfDirect, ["what-if-data-v5"], {
+const getCachedWhatIf = unstable_cache(fetchWhatIfDirect, ["what-if-data-v6"], {
     revalidate: 1800,
     tags: ["analytics-data", "what-if"],
 })

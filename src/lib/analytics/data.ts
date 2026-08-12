@@ -7,7 +7,7 @@ import "server-only"
 import { unstable_cache } from "next/cache"
 import { google } from "googleapis"
 import { classifyOrderChannel } from "@/lib/sales/channel"
-import { stockAtCurrent, stockAtSku } from "@/lib/stock/stock-at-columns"
+import { buildStockQtyRecord, toStockQtyMap } from "@/lib/stock/stock-at-columns"
 import {
     CORE_WINNER_SEEDS,
     DEFAULT_LEAD_TIME,
@@ -115,28 +115,24 @@ function parseCosts(raw: Record<string, string>[]): PoCostRow[] {
     }))
 }
 
-function parseStockAt(raw: Record<string, string>[]): Map<string, number> {
+function parseStockAt(raw: Record<string, string>[]): Record<string, number> {
     // Stock_AT SKU col is `ATB` (was `SKU`); qty is always `Current Stock`.
-    const map = new Map<string, number>()
-    for (const r of raw) {
-        const sku = stockAtSku(r)
-        if (!sku) continue
-        map.set(sku, stockAtCurrent(r))
-    }
-    return map
+    // Return a plain Record so unstable_cache JSON round-trips correctly
+    // (Map serializes to {} and wiped stock on every analytics page).
+    return buildStockQtyRecord(raw)
 }
 
 function parseLaunchedProducts(
     raw: Record<string, string>[],
-): Map<string, LaunchRef> {
-    const map = new Map<string, LaunchRef>()
+): Record<string, LaunchRef> {
+    const map: Record<string, LaunchRef> = {}
     for (const r of raw) {
         const sku = String(r.zort_sku ?? "").trim().toUpperCase()
         if (!sku) continue
-        map.set(sku, {
+        map[sku] = {
             launch_date: String(r.launch_date ?? ""),
             launch_type: String(r.launch_type ?? ""),
-        })
+        }
     }
     return map
 }
@@ -159,15 +155,26 @@ async function fetchRawSheetsDirect() {
 
 const getCachedRawSheets = unstable_cache(
     fetchRawSheetsDirect,
-    ["robotmaker-analytics-raw"],
+    // v2: Records instead of Maps (Maps JSON-serialize to {} and wipe Current Stock)
+    ["robotmaker-analytics-raw-v2"],
     { revalidate: 3600, tags: ["analytics-data"] },
 )
 
 async function loadRawSheets() {
     try {
-        return await getCachedRawSheets()
+        const raw = await getCachedRawSheets()
+        return {
+            ...raw,
+            stockBySku: toStockQtyMap(raw.stockBySku),
+            launchedBySku: new Map(Object.entries(raw.launchedBySku ?? {})),
+        }
     } catch {
-        return fetchRawSheetsDirect()
+        const raw = await fetchRawSheetsDirect()
+        return {
+            ...raw,
+            stockBySku: toStockQtyMap(raw.stockBySku),
+            launchedBySku: new Map(Object.entries(raw.launchedBySku ?? {})),
+        }
     }
 }
 
@@ -646,6 +653,7 @@ export async function revalidateAnalyticsCache() {
     const { revalidateTag } = await import("next/cache")
     revalidateTag("analytics-data", "default")
     revalidateTag("launch-command-center", "default")
+    revalidateTag("what-if", "default")
 }
 
 export async function getAnalyticsSalesContext() {

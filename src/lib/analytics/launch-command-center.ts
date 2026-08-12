@@ -9,8 +9,9 @@ import { format, isValid, subDays } from "date-fns"
 import { google } from "googleapis"
 import { classifyOrderChannel } from "@/lib/sales/channel"
 import {
-    stockAtCurrent,
+    buildStockQtyRecord,
     stockAtSku,
+    toStockQtyMap,
 } from "@/lib/stock/stock-at-columns"
 import {
     buildNewLaunchSkuSetForYear,
@@ -256,10 +257,10 @@ function parseKolPosts(raw: Record<string, string>[]): KolPost[] {
 }
 
 function parseStockLots(raw: Record<string, string>[]): {
-    stockBySku: Map<string, number>
+    stockBySku: Record<string, number>
     lots: StockLotRow[]
 } {
-    const stockBySku = new Map<string, number>()
+    const stockBySku = buildStockQtyRecord(raw)
     const lots: StockLotRow[] = []
     const hasLotCols = raw.some(
         (r) => r.lot_no || r["Lot No"] || r.qty_ordered || r["Qty Ordered"],
@@ -268,7 +269,6 @@ function parseStockLots(raw: Record<string, string>[]): {
     for (const r of raw) {
         const sku = stockAtSku(r)
         if (!sku) continue
-        stockBySku.set(sku, (stockBySku.get(sku) ?? 0) + stockAtCurrent(r))
 
         if (hasLotCols) {
             const lotNo = String(r.lot_no ?? r["Lot No"] ?? r.lot ?? "Lot").trim()
@@ -283,12 +283,12 @@ function parseStockLots(raw: Record<string, string>[]): {
     return { stockBySku, lots }
 }
 
-function parseLaunched(raw: Record<string, string>[]): Map<string, string> {
-    const map = new Map<string, string>()
+function parseLaunched(raw: Record<string, string>[]): Record<string, string> {
+    const map: Record<string, string> = {}
     for (const r of raw) {
         const sku = String(r.zort_sku ?? r.sku ?? "").trim().toUpperCase()
         const ld = String(r.launch_date ?? "").slice(0, 10)
-        if (sku && ld) map.set(sku, ld)
+        if (sku && ld) map[sku] = ld
     }
     return map
 }
@@ -1002,7 +1002,8 @@ async function fetchLaunchDataDirect() {
 
 const getCachedLaunchData = unstable_cache(
     fetchLaunchDataDirect,
-    ["launch-command-center-raw-v3"],
+    // v4: stock/launch Maps → Records (JSON-safe; Maps were wiping Current Stock)
+    ["launch-command-center-raw-v4"],
     { revalidate: 1800, tags: ["analytics-data", "launch-command-center"] },
 )
 
@@ -1015,6 +1016,9 @@ export async function loadLaunchCommandCenter(
     } catch {
         raw = await fetchLaunchDataDirect()
     }
+
+    const stockBySku = toStockQtyMap(raw.stockBySku)
+    const launchDates = new Map(Object.entries(raw.launchDates ?? {}))
 
     const costMap = new Map(raw.costs.map((c) => [c.sku.toUpperCase(), c]))
     const cohortYear = new Date().getFullYear()
@@ -1037,10 +1041,10 @@ export async function loadLaunchCommandCenter(
             g,
             raw.sales,
             raw.kolPosts,
-            raw.stockBySku,
+            stockBySku,
             raw.lots,
             costMap,
-            raw.launchDates,
+            launchDates,
         ),
     )
 
