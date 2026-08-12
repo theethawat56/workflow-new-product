@@ -5,7 +5,8 @@ export async function findAll<T>(sheetName: SheetName): Promise<T[]> {
     const sheets = await getSheetsClient()
     const spreadsheetId = await getSpreadsheetId()
     const realSheetName = SHEETS_CONFIG[sheetName].name
-    const range = `${realSheetName}!A:Z` // Read all data
+    // Full tab (no A:Z cap) — Stock_AT "Current Stock" lives past early columns.
+    const range = realSheetName
 
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId,

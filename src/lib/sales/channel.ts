@@ -1,4 +1,9 @@
-/** Channel classification + deduction rates for Net GP on sales dashboards. */
+/**
+ * Net GP channel deductions (RobotMaker standard).
+ *
+ * Marketplace (Shopee / Lazada / TikTok): VAT 7% + Com 23% + Shipping 2% = 32%
+ * Direct (Direct / Line / FB / POS):       VAT 7% + Installment 10% + Shipping 2% = 19%
+ */
 
 export type ChannelCategory = "MARKETPLACE" | "DIRECT" | "OTHER"
 
@@ -8,8 +13,18 @@ export interface ChannelClassification {
     deduction: number
 }
 
-const MARKETPLACE_DEDUCTION = 0.32
-const DIRECT_DEDUCTION = 0.19
+/** VAT 7% + Com 23% + Shipping 2% */
+export const MARKETPLACE_DEDUCTION = 0.32
+
+/** VAT 7% + Installment 10% + Shipping 2% */
+export const DIRECT_DEDUCTION = 0.19
+
+export const DEDUCTION_LABELS = {
+    MARKETPLACE:
+        "Marketplace (Shopee/Lazada/TikTok): VAT 7% + Com 23% + Shipping 2% = 32%",
+    DIRECT:
+        "Direct (Direct/Line/FB/POS): VAT 7% + Installment 10% + Shipping 2% = 19%",
+} as const
 
 export function classifyOrderChannel(
     salesChannel: string | undefined,

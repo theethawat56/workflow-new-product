@@ -367,7 +367,7 @@ export function CohortGrowthDashboard({
     }
 
     return (
-        <div className="flex flex-col gap-6 max-w-7xl mx-auto py-8 px-4 text-foreground">
+        <div className="flex flex-col gap-4 w-full py-2 text-foreground">
             <div>
                 <Link
                     href="/dashboard/sales"

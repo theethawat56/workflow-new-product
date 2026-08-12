@@ -3,7 +3,7 @@
  *
  * Two modes selected by the `mode` query parameter:
  *
- *   1. `delta` (default) — used by the daily cron. Re-syncs the trailing N
+ *   1. `delta` (default) — used by the every-4-hour cron. Re-syncs the trailing N
  *      days (default 3) so status flips (Pending → Success → Voided) and
  *      newly-created orders both land in the sheet. Idempotent via row_id
  *      upsert. Always completes well under 60s for typical daily volume.

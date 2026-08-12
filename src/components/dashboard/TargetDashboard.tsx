@@ -16,6 +16,7 @@ import type { DailyResponse } from '@/app/api/target/daily/route'
 
 interface ProductDecision {
   sku: string
+  productName: string
   status: 'pending' | 'keep' | 'cut' | 'watch' | 'restock'
   note?: string
   decided_at?: string
@@ -164,7 +165,13 @@ export function TargetDashboard({}: TargetDashboardProps) {
         if (existing) {
           return prev.map(p => 
             p.sku === editingSku 
-              ? { ...p, status: editingStatus as any, note: editingNote, updated_at: new Date().toISOString() }
+              ? { 
+                  ...p, 
+                  status: editingStatus as ProductDecision['status'], 
+                  note: editingNote, 
+                  updated_at: new Date().toISOString(),
+                  productName: result.data.productName ?? p.productName,
+                }
               : p
           )
         } else {
@@ -204,7 +211,7 @@ export function TargetDashboard({}: TargetDashboardProps) {
 
   if (loading) {
     return (
-      <div className="p-6">
+      <div className="p-2">
         <div className="animate-pulse space-y-4">
           <div className="h-8 bg-gray-200 rounded w-1/4"></div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -219,7 +226,7 @@ export function TargetDashboard({}: TargetDashboardProps) {
 
   if (error) {
     return (
-      <div className="p-6">
+      <div className="p-2">
         <Alert>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
@@ -228,7 +235,7 @@ export function TargetDashboard({}: TargetDashboardProps) {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-2 space-y-4">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-3xl font-bold">Product Growth & Leak-Plug Dashboard</h1>
         <div className="flex items-center gap-2">
@@ -410,8 +417,8 @@ export function TargetDashboard({}: TargetDashboardProps) {
                     {dailyData.gainers.map((item) => (
                       <div key={item.sku} className="flex justify-between items-center p-3 bg-green-50 rounded">
                         <div>
-                          <div className="font-medium">{item.sku}</div>
-                          <div className="text-sm text-gray-600">{item.productName}</div>
+                          <div className="font-medium">{item.productName}</div>
+                          <div className="text-sm text-gray-600">{item.sku}</div>
                         </div>
                         <div className="text-right">
                           <div className="font-semibold text-green-600">
@@ -441,8 +448,8 @@ export function TargetDashboard({}: TargetDashboardProps) {
                     {dailyData.losers.map((item) => (
                       <div key={item.sku} className="flex justify-between items-center p-3 bg-red-50 rounded">
                         <div>
-                          <div className="font-medium">{item.sku}</div>
-                          <div className="text-sm text-gray-600">{item.productName}</div>
+                          <div className="font-medium">{item.productName}</div>
+                          <div className="text-sm text-gray-600">{item.sku}</div>
                         </div>
                         <div className="text-right">
                           <div className="font-semibold text-red-600">
@@ -506,9 +513,10 @@ export function TargetDashboard({}: TargetDashboardProps) {
                       <div className="flex items-center gap-3">
                         <div className={`w-3 h-3 rounded-full ${statusColors[decision.status]}`}></div>
                         <div>
-                          <div className="font-medium">{decision.sku}</div>
+                          <div className="font-medium">{decision.productName}</div>
+                          <div className="text-sm text-gray-500">{decision.sku}</div>
                           {decision.note && (
-                            <div className="text-sm text-gray-600">{decision.note}</div>
+                            <div className="text-sm text-gray-600 mt-1">{decision.note}</div>
                           )}
                         </div>
                       </div>
@@ -537,7 +545,14 @@ export function TargetDashboard({}: TargetDashboardProps) {
       <Dialog open={editingSku !== null} onOpenChange={() => setEditingSku(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>แก้ไขการตัดสินใจ: {editingSku}</DialogTitle>
+            <DialogTitle>
+              แก้ไขการตัดสินใจ:{" "}
+              {productDecisions.find((p) => p.sku === editingSku)?.productName ??
+                editingSku}
+            </DialogTitle>
+            {editingSku && (
+              <p className="text-sm text-muted-foreground">{editingSku}</p>
+            )}
           </DialogHeader>
           <div className="space-y-4">
             <div>

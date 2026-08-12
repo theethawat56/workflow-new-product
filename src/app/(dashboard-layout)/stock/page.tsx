@@ -1,21 +1,25 @@
 import { findAll } from "@/lib/db/adapter"
 import { StockDashboard } from "@/components/stock/StockDashboard"
+import { normalizeStockAtRow } from "@/lib/stock/stock-at-columns"
 import { Package2 } from "lucide-react"
 
 export const dynamic = "force-dynamic"
 
 export default async function StockPage() {
-    let items: any[] = []
+    let items: ReturnType<typeof normalizeStockAtRow>[] = []
     let error: string | null = null
 
     try {
-        items = await findAll<any>("stock_at")
+        const raw = await findAll<Record<string, unknown>>("stock_at")
+        items = raw
+            .map(normalizeStockAtRow)
+            .filter((r) => r.SKU || r["Product Name"] || r.STATUS)
     } catch (e: any) {
         error = e.message || "Failed to load stock data"
     }
 
     return (
-        <div className="container mx-auto py-10 space-y-6">
+        <div className="w-full py-2 space-y-4">
             <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-sky-100">
                     <Package2 className="h-6 w-6 text-sky-600" />

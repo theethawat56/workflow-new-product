@@ -65,7 +65,7 @@ export default function AboutPage() {
     ]
 
     return (
-        <div className="p-8 max-w-7xl mx-auto">
+        <div className="p-2 w-full">
             <div className="mb-10 text-center md:text-left">
                 <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-2">System Overview</h1>
                 <p className="text-lg text-gray-500 max-w-3xl">

@@ -1,19 +1,24 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { fetchSheet } from '@/lib/workspace/data-source'
+import { buildSkuProductNameMap, resolveProductName } from '@/lib/target/product-names'
 import { ensureSheetWithHeaders } from '@/lib/sales/order-sheet-writer'
 import { getSheetsClient, getSpreadsheetId } from '@/lib/google/sheets'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 
 // Validation schemas
-const ProductDecisionRowSchema = z.object({
+const ProductDecisionSheetRowSchema = z.object({
   sku: z.string(),
   status: z.enum(['pending', 'keep', 'cut', 'watch', 'restock']),
   note: z.string().optional().default(''),
   decided_at: z.string().optional().default(''),
   updated_by: z.string().optional().default(''),
   updated_at: z.string().optional().default(''),
+})
+
+const ProductDecisionRowSchema = ProductDecisionSheetRowSchema.extend({
+  productName: z.string(),
 })
 
 const ProductDecisionUpdateSchema = z.object({
@@ -45,13 +50,17 @@ export async function GET() {
     await ensureProductDecisionsSheet()
     
     const rawData = await fetchSheet('product_decisions' as any) // Type assertion for new sheet
+    const nameMap = await buildSkuProductNameMap()
     
     const decisions: ProductDecisionRow[] = []
     
     for (const row of rawData) {
       try {
-        const parsed = ProductDecisionRowSchema.parse(row)
-        decisions.push(parsed)
+        const sheetRow = ProductDecisionSheetRowSchema.parse(row)
+        decisions.push({
+          ...sheetRow,
+          productName: resolveProductName(sheetRow.sku, nameMap),
+        })
       } catch (error) {
         // Skip invalid rows
         console.warn('Invalid product decision row:', error)
@@ -107,6 +116,7 @@ export async function POST(request: Request) {
 
     const newRow: ProductDecisionRow = {
       sku: update.sku,
+      productName: resolveProductName(update.sku, await buildSkuProductNameMap()),
       status: update.status,
       note: update.note || '',
       decided_at: decidedAt,

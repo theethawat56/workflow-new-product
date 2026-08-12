@@ -47,6 +47,29 @@ export interface LaunchedProductRow {
     launch_type?: string
 }
 
+/**
+ * Same "new product" rule as the Sales dashboard:
+ * - NEW_LAUNCH in launched_products → new
+ * - EXISTING_ADDITION → catalog (not new)
+ * - otherwise → go_live_date in the given year
+ */
+export function isNewLaunchProduct(
+    goLiveDate: string | undefined | null,
+    launchedInfo: Pick<LaunchedProductRow, "launch_type"> | undefined | null,
+    year: number = new Date().getFullYear(),
+): boolean {
+    const launchDate = goLiveDate ? new Date(goLiveDate) : null
+    const launchYear =
+        launchDate && !isNaN(launchDate.getTime()) ? launchDate.getFullYear() : null
+
+    if (launchedInfo) {
+        if (launchedInfo.launch_type === "NEW_LAUNCH") return true
+        if (launchedInfo.launch_type === "EXISTING_ADDITION") return false
+        return launchYear === year
+    }
+    return launchYear === year
+}
+
 export function getNewLaunchSkusForYear(
     launchedProducts: LaunchedProductRow[],
     year: number,
@@ -65,6 +88,44 @@ export function getNewLaunchSkusForYear(
 
 export function buildCohort2026SkuSet(launchedProducts: LaunchedProductRow[]): Set<string> {
     return new Set(getNewLaunchSkusForYear(launchedProducts, new Date().getFullYear()))
+}
+
+export interface ProductGoLiveRow {
+    sku_code: string
+    go_live_date?: string
+}
+
+/**
+ * SKUs classified as "new launch" for a given year — same rule as the Sales dashboard
+ * (`isNewLaunchProduct` on `launched_products` + `products.go_live_date`).
+ */
+export function buildNewLaunchSkuSetForYear(
+    launchedProducts: LaunchedProductRow[],
+    products: ProductGoLiveRow[],
+    year: number = new Date().getFullYear(),
+): Set<string> {
+    const launchedMap = new Map<string, LaunchedProductRow>()
+    for (const lp of launchedProducts) {
+        const sku = lp.zort_sku.trim().toUpperCase()
+        if (sku) launchedMap.set(sku, lp)
+    }
+
+    const productGoLive = new Map<string, string | undefined>()
+    for (const p of products) {
+        const sku = p.sku_code.trim().toUpperCase()
+        if (sku) productGoLive.set(sku, p.go_live_date)
+    }
+
+    const skus = new Set<string>()
+    const allSkus = new Set([...launchedMap.keys(), ...productGoLive.keys()])
+
+    for (const sku of allSkus) {
+        if (isNewLaunchProduct(productGoLive.get(sku), launchedMap.get(sku), year)) {
+            skus.add(sku)
+        }
+    }
+
+    return skus
 }
 
 export function earliestLaunchDate(

@@ -174,7 +174,7 @@ export default async function DashboardPage() {
     })
 
     return (
-        <div className="flex flex-col gap-6 max-w-7xl mx-auto py-8 px-4 text-foreground">
+        <div className="flex flex-col gap-4 w-full py-2 text-foreground">
             <div>
                 <h1 className="text-3xl font-bold tracking-tight">Executive Dashboard</h1>
                 <p className="text-muted-foreground mt-1">Real-time insights on product pipeline and team performance.</p>

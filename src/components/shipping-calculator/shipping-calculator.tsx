@@ -600,7 +600,7 @@ export function ShippingCalculator() {
     const sym = currencySymbol[displayCurrency]
 
     return (
-        <div className="flex flex-col gap-6 max-w-7xl mx-auto py-8 px-4 text-foreground">
+        <div className="flex flex-col gap-4 w-full py-2 text-foreground">
             <div>
                 <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
                     <Calculator className="h-7 w-7 text-primary" />

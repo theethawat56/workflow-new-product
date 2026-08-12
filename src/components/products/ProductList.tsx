@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label"
 import { ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, ChevronRight, Loader2, Rocket, RotateCcw } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { isNewLaunchProduct } from "@/lib/sales/cohort"
 
 type SortField = "name" | "launch_date" | null
 type SortDir = "asc" | "desc"
@@ -31,13 +32,34 @@ interface Product {
     active_task_due_date?: string
 }
 
+interface LaunchedProductRef {
+    zort_sku: string
+    launch_type?: string
+}
+
 interface ProductListProps {
     initialProducts: Product[]
     isLaunchedView?: boolean
+    launchedProducts?: LaunchedProductRef[]
 }
 
-export function ProductList({ initialProducts, isLaunchedView = false }: ProductListProps) {
+export function ProductList({
+    initialProducts,
+    isLaunchedView = false,
+    launchedProducts = [],
+}: ProductListProps) {
     const router = useRouter()
+    const currentYear = new Date().getFullYear()
+
+    const launchedMap = useMemo(() => {
+        const map = new Map<string, LaunchedProductRef>()
+        launchedProducts.forEach((lp) => {
+            const sku = String(lp.zort_sku ?? "").trim()
+            if (sku) map.set(sku, lp)
+        })
+        return map
+    }, [launchedProducts])
+
     const [search, setSearch] = useState("")
     const [statusFilter, setStatusFilter] = useState("ALL")
     const [channelFilter, setChannelFilter] = useState("ALL")
@@ -67,8 +89,6 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
             setSortDir("asc")
         }
     }
-
-    const currentYear = new Date().getFullYear()
 
     // Launch Modal State
     const [launchOpen, setLaunchOpen] = useState(false)
@@ -170,17 +190,16 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
             const matchesStatus = statusFilter === "ALL" || p.status === statusFilter
             const matchesChannel = channelFilter === "ALL" || p.sales_channel === channelFilter
 
-            // Launch Year Logic
+            // New vs catalog — same rule as Sales dashboard
             let matchesLaunch = true
             if (isLaunchedView && launchFilter !== "ALL") {
-                const launchDate = p.go_live_date ? new Date(p.go_live_date) : null
-                const launchYear = launchDate ? launchDate.getFullYear() : null
-
-                if (launchFilter === "NEW") {
-                    matchesLaunch = launchYear === currentYear
-                } else if (launchFilter === "CATALOG") {
-                    matchesLaunch = launchYear !== currentYear
-                }
+                const isNew = isNewLaunchProduct(
+                    p.go_live_date,
+                    launchedMap.get(p.sku_code.trim()),
+                    currentYear,
+                )
+                if (launchFilter === "NEW") matchesLaunch = isNew
+                else if (launchFilter === "CATALOG") matchesLaunch = !isNew
             }
 
             return matchesSearch && matchesStatus && matchesChannel && matchesLaunch
@@ -205,7 +224,7 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
         }
 
         return results
-    }, [initialProducts, search, statusFilter, channelFilter, launchFilter, isLaunchedView, currentYear, sortField, sortDir])
+    }, [initialProducts, search, statusFilter, channelFilter, launchFilter, isLaunchedView, currentYear, sortField, sortDir, launchedMap])
 
 
     // Get unique channels for filter
@@ -333,7 +352,11 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
                             filtered.map(product => {
                                 const launchDate = product.go_live_date ? new Date(product.go_live_date) : null
                                 const launchYear = launchDate ? launchDate.getFullYear() : null
-                                const isNew = launchYear === currentYear
+                                const isNew = isNewLaunchProduct(
+                                    product.go_live_date,
+                                    launchedMap.get(product.sku_code.trim()),
+                                    currentYear,
+                                )
                                 const isExpanded = expandedRows.has(product.product_id)
 
                                 return (
@@ -369,8 +392,11 @@ export function ProductList({ initialProducts, isLaunchedView = false }: Product
                                             <TableCell className="font-medium">
                                                 {product.sku_code}
                                                 {isNew && isLaunchedView && (
-                                                    <Badge variant="outline" className="ml-2 py-0 h-5 text-[10px] bg-green-50 text-green-700 border-green-200">
-                                                        NEW {launchYear}
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="ml-2 py-0 h-5 text-[10px] bg-emerald-100 text-emerald-800 border-emerald-200"
+                                                    >
+                                                        New
                                                     </Badge>
                                                 )}
                                             </TableCell>

@@ -6,13 +6,16 @@ import { AddExistingProductDialog } from "@/components/products/AddExistingProdu
 export const dynamic = 'force-dynamic'
 
 export default async function OnSaleProductsPage() {
-    const products = await findAll<any>("products" as SheetName)
+    const [products, launchedSheet] = await Promise.all([
+        findAll<any>("products" as SheetName),
+        findAll<any>("launched_products" as SheetName),
+    ])
 
     // Filter for launched products AND existing products
     const launchedProducts = products.filter((p: any) => p.status === "Launched" || p.status === "Existing")
 
     return (
-        <div className="flex flex-col gap-6 max-w-7xl mx-auto py-8 px-4 text-foreground">
+        <div className="flex flex-col gap-4 w-full py-2 text-foreground">
             <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Products on Sale</h1>
@@ -21,7 +24,11 @@ export default async function OnSaleProductsPage() {
                 <AddExistingProductDialog />
             </div>
 
-            <ProductList initialProducts={launchedProducts} isLaunchedView={true} />
+            <ProductList
+                initialProducts={launchedProducts}
+                launchedProducts={launchedSheet}
+                isLaunchedView={true}
+            />
         </div>
     )
 }

@@ -54,14 +54,21 @@ import {
     isValid,
     differenceInCalendarMonths,
     differenceInCalendarDays,
+    format,
 } from "date-fns"
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Domain types
 // ─────────────────────────────────────────────────────────────────────────────
-import { classifyOrderChannel } from "@/lib/sales/channel"
-import { isMainSku } from "@/lib/sales/cohort"
+import {
+    classifyOrderChannel,
+    DEDUCTION_LABELS,
+    DIRECT_DEDUCTION,
+    MARKETPLACE_DEDUCTION,
+} from "@/lib/sales/channel"
+import { isMainSku, isNewLaunchProduct } from "@/lib/sales/cohort"
 import Link from "next/link"
+import { SkuLink } from "@/components/analytics/SkuLink"
 
 interface SalesOrderRow {
     row_id: string
@@ -162,6 +169,8 @@ export function SalesDashboard({
     const [subCategoryFilter, setSubCategoryFilter] = useState("ALL")
     const [channelFilter, setChannelFilter] = useState("ALL")
     const [periodFilter, setPeriodFilter] = useState("THIS_YEAR")
+    const [customFrom, setCustomFrom] = useState("")
+    const [customTo, setCustomTo] = useState("")
     const [searchQuery, setSearchQuery] = useState("")
     // Default ON — `Sale_All` historically included ~600 accessory / dump SKUs
     // that diluted every chart. We only want branded products (ATB*, EU0*).
@@ -262,19 +271,11 @@ export function SalesDashboard({
                 const product = productMap.get(sku)
                 const launchedInfo = launchedMap.get(sku)
 
-                const launchDate = product?.go_live_date
-                    ? new Date(product.go_live_date)
-                    : null
-                const launchYear = launchDate ? launchDate.getFullYear() : null
-
-                let isNew = false
-                if (launchedInfo) {
-                    if (launchedInfo.launch_type === "NEW_LAUNCH") isNew = true
-                    else if (launchedInfo.launch_type === "EXISTING_ADDITION") isNew = false
-                    else isNew = launchYear === currentYear
-                } else {
-                    isNew = launchYear === currentYear
-                }
+                const isNew = isNewLaunchProduct(
+                    product?.go_live_date,
+                    launchedInfo,
+                    currentYear,
+                )
 
                 const date = new Date(row.order_date)
                 const quantity = toNum(row.quantity)
@@ -364,11 +365,34 @@ export function SalesDashboard({
                 return { start: subDays(now, 30), end: now }
             case "LAST_90_DAYS":
                 return { start: subDays(now, 90), end: now }
-            case "ALL":
-            default:
+            case "CUSTOM": {
+                // Custom date-to-date range from the two date pickers
+                const from = customFrom ? new Date(customFrom) : null
+                const to = customTo ? new Date(customTo) : null
+                if (from && to && isValid(from) && isValid(to)) {
+                    // Allow either order; clamp to full days
+                    const lo = from <= to ? from : to
+                    const hi = from <= to ? to : from
+                    return { start: startOfDay(lo), end: endOfDay(hi) }
+                }
                 return null
+            }
+            case "ALL":
+                return null
+            default: {
+                // Specific month: "MONTH:2026-06"
+                if (periodFilter.startsWith("MONTH:")) {
+                    const ym = periodFilter.slice(6)
+                    const [y, m] = ym.split("-").map(Number)
+                    if (y && m) {
+                        const d = new Date(y, m - 1, 1)
+                        return { start: startOfMonth(d), end: endOfMonth(d) }
+                    }
+                }
+                return null
+            }
         }
-    }, [periodFilter])
+    }, [periodFilter, customFrom, customTo])
 
     // ─── 3. Apply filters ────────────────────────────────────────────────────
     const filtered = useMemo(() => {
@@ -588,6 +612,22 @@ export function SalesDashboard({
     )
 
     // ─── 9. Filter options ───────────────────────────────────────────────────
+    // Distinct months present in the data → "MONTH:yyyy-MM" options (newest first)
+    const monthOptions = useMemo<[string, string][]>(() => {
+        const keys = new Set<string>()
+        enriched.forEach((d) => {
+            if (isValid(d.date)) keys.add(format(d.date, "yyyy-MM"))
+        })
+        return Array.from(keys)
+            .sort()
+            .reverse()
+            .map((ym) => {
+                const [y, m] = ym.split("-").map(Number)
+                const label = format(new Date(y, m - 1, 1), "MMM yyyy")
+                return [`MONTH:${ym}`, label] as [string, string]
+            })
+    }, [enriched])
+
     const categories = Array.from(new Set(enriched.map((d) => d.category))).sort()
     const subCategories = Array.from(
         new Set(
@@ -599,7 +639,7 @@ export function SalesDashboard({
 
     // ─── Render ──────────────────────────────────────────────────────────────
     return (
-        <div className="flex flex-col gap-6 max-w-7xl mx-auto py-8 px-4 text-foreground">
+        <div className="flex flex-col gap-4 w-full py-2 text-foreground">
             <div className="flex flex-wrap justify-between items-start gap-4">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Sales & Profitability</h1>
@@ -650,7 +690,7 @@ export function SalesDashboard({
                     </div>
                     <div className="text-xs text-muted-foreground text-right space-y-0.5">
                         <div>
-                            Orders source: <strong>sales_orders</strong> (Zort) ·{" "}
+                            Orders source: <strong>sales_orders</strong> (Zort) · auto every 4h ·{" "}
                             {lastOrderSyncAt
                                 ? `last sync ${new Date(lastOrderSyncAt).toLocaleString("th-TH")}`
                                 : "not yet synced"}
@@ -676,18 +716,12 @@ export function SalesDashboard({
                     <Info className="w-3.5 h-3.5" />
                     Net GP deductions per channel:
                 </span>
-                <span>
-                    <strong className="text-foreground">Marketplace</strong> (Shopee/Lazada):
-                    VAT 7% + Com 23% + Shipping 2% =
-                    <strong className="text-foreground"> 32%</strong>
-                </span>
-                <span>
-                    <strong className="text-foreground">Direct</strong> (Direct/Line/FB): VAT 7% +
-                    Installment 10% + Shipping 2% =
-                    <strong className="text-foreground"> 19%</strong>
-                </span>
+                <span>{DEDUCTION_LABELS.MARKETPLACE}</span>
+                <span>{DEDUCTION_LABELS.DIRECT}</span>
                 <span className="text-muted-foreground">
-                    Mixed channels assume 50/50 blend (~25.5%)
+                    Per-order channel from Zort —{" "}
+                    {Math.round(MARKETPLACE_DEDUCTION * 100)}% marketplace /{" "}
+                    {Math.round(DIRECT_DEDUCTION * 100)}% direct applied per line
                 </span>
             </div>
 
@@ -710,8 +744,42 @@ export function SalesDashboard({
                         ["LAST_30_DAYS", "Last 30 Days"],
                         ["LAST_90_DAYS", "Last 90 Days"],
                         ["ALL", "All Time"],
+                        ["CUSTOM", "Custom range (date → date)"],
+                        ...monthOptions,
                     ]}
+                    groupLabel={monthOptions.length > 0 ? "By month" : undefined}
+                    groupFromValue="MONTH:"
                 />
+                {periodFilter === "CUSTOM" && (
+                    <div className="space-y-2">
+                        <span className="text-sm font-medium flex items-center gap-1">
+                            <CalendarIcon className="w-3 h-3" />
+                            Date range
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="date"
+                                value={customFrom}
+                                max={customTo || undefined}
+                                onChange={(e) => setCustomFrom(e.target.value)}
+                                className="h-9 rounded-md border bg-background px-2 text-sm"
+                            />
+                            <span className="text-muted-foreground text-sm">→</span>
+                            <input
+                                type="date"
+                                value={customTo}
+                                min={customFrom || undefined}
+                                onChange={(e) => setCustomTo(e.target.value)}
+                                className="h-9 rounded-md border bg-background px-2 text-sm"
+                            />
+                        </div>
+                        {(!customFrom || !customTo) && (
+                            <p className="text-xs text-muted-foreground">
+                                เลือกวันเริ่มและวันสิ้นสุด — ถ้ายังไม่ครบจะแสดงทั้งหมด
+                            </p>
+                        )}
+                    </div>
+                )}
                 <FilterSelect
                     icon={<Filter className="w-3 h-3" />}
                     label="Status"
@@ -1171,7 +1239,7 @@ export function SalesDashboard({
                                                         )}
                                                     </span>
                                                     <span className="text-xs text-muted-foreground">
-                                                        {p.sku} · {p.category} / {p.sub_category}
+                                                        <SkuLink sku={p.sku} /> · {p.category} / {p.sub_category}
                                                     </span>
                                                 </div>
                                             </td>
@@ -1286,12 +1354,17 @@ function FilterSelect({
     value,
     onChange,
     options,
+    groupLabel,
+    groupFromValue,
 }: {
     icon?: React.ReactNode
     label: string
     value: string
     onChange: (v: string) => void
     options: [string, string][]
+    /** Optional separator label rendered before the first option matching groupFromValue */
+    groupLabel?: string
+    groupFromValue?: string
 }) {
     return (
         <div className="space-y-2">
@@ -1303,12 +1376,24 @@ function FilterSelect({
                 <SelectTrigger className="w-[180px] bg-background">
                     <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                    {options.map(([v, l]) => (
-                        <SelectItem key={v} value={v}>
-                            {l}
-                        </SelectItem>
-                    ))}
+                <SelectContent className="max-h-[320px]">
+                    {options.map(([v, l], i) => {
+                        const showGroup =
+                            groupLabel &&
+                            groupFromValue &&
+                            v.startsWith(groupFromValue) &&
+                            (i === 0 || !options[i - 1][0].startsWith(groupFromValue))
+                        return (
+                            <div key={v}>
+                                {showGroup && (
+                                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
+                                        {groupLabel}
+                                    </div>
+                                )}
+                                <SelectItem value={v}>{l}</SelectItem>
+                            </div>
+                        )
+                    })}
                 </SelectContent>
             </Select>
         </div>

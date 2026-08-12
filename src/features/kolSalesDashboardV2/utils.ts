@@ -27,17 +27,24 @@ export function parseSheetDate(raw: string | undefined): string | null {
         return isValid(date) ? format(date, 'yyyy-MM-dd') : null
     }
 
-    // 3. DD/MM/YYYY
+    // 3. M/D/YYYY (US — KOL sheet / Dataslot sync)
     const parts = raw.split(/[\/-]/)
     if (parts.length === 3) {
-        const d = parseInt(parts[0])
-        const m = parseInt(parts[1])
-        const y = parseInt(parts[2])
-        if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
-            // Check basic validity
-            if (m < 1 || m > 12 || d < 1 || d > 31) return null
-            const date = new Date(y, m - 1, d)
-            return isValid(date) ? format(date, 'yyyy-MM-dd') : null
+        const a = parseInt(parts[0], 10)
+        const b = parseInt(parts[1], 10)
+        let y = parseInt(parts[2], 10)
+        if (y < 100) y += 2000
+        if (!isNaN(a) && !isNaN(b) && !isNaN(y)) {
+            // US: month/day/year when first part ≤ 12 and second ≤ 31
+            if (a >= 1 && a <= 12 && b >= 1 && b <= 31) {
+                const usDate = new Date(y, a - 1, b)
+                if (isValid(usDate)) return format(usDate, "yyyy-MM-dd")
+            }
+            // DD/MM/YYYY fallback
+            if (b >= 1 && b <= 12 && a >= 1 && a <= 31) {
+                const euDate = new Date(y, b - 1, a)
+                if (isValid(euDate)) return format(euDate, "yyyy-MM-dd")
+            }
         }
     }
 

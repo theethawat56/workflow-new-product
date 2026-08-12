@@ -58,7 +58,7 @@ export default async function PipelineProductsPage() {
     const avgLaunchTimeDays = launchCountForAvg > 0 ? Math.round(totalDays / launchCountForAvg) : 0
 
     return (
-        <div className="flex flex-col gap-6 max-w-7xl mx-auto py-8 px-4 text-foreground">
+        <div className="flex flex-col gap-4 w-full py-2 text-foreground">
             <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">New Products</h1>

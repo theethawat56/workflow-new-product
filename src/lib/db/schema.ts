@@ -235,15 +235,18 @@ export const SHEETS_CONFIG = {
         ],
     },
     stock_at: {
+        // Live Stock_AT headers (qty = "Current Stock" col; SKU col renamed to ATB).
+        // findAll maps by actual row-1 header names — keep aliases in stock-at-columns.ts.
         name: "Stock_AT",
         headers: [
             "STATUS",
-            "SKU",
-            "Product Name",
+            "ATB",
+            "Item name",
             "Current Stock",
             "Safety Stock pcs",
             "Day inventory outstanding",
-        ]
+            "In-Transit Stock",
+        ],
     },
     line_sessions: {
         name: "line_sessions",

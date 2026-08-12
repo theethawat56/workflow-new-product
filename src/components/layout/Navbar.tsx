@@ -15,15 +15,32 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { ChevronLeft, Menu, LayoutDashboard, Package, Users } from "lucide-react"
+import { ChevronLeft, Menu, PanelLeftClose, PanelLeft } from "lucide-react"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import { Sidebar } from "@/components/layout/Sidebar"
+import {
+    SIDEBAR_CHANGE_EVENT,
+    readSidebarOpen,
+    toggleSidebarOpen,
+} from "@/lib/sidebar-state"
 
 export function Navbar() {
     const { data: session } = useSession()
     const router = useRouter()
     const pathname = usePathname()
     const [isOpen, setIsOpen] = React.useState(false)
+    const [sidebarOpen, setSidebarOpen] = React.useState(true)
+
+    React.useEffect(() => {
+        setSidebarOpen(readSidebarOpen())
+        const onChange = (e: Event) => {
+            const detail = (e as CustomEvent<{ open: boolean }>).detail
+            if (detail && typeof detail.open === "boolean") setSidebarOpen(detail.open)
+            else setSidebarOpen(readSidebarOpen())
+        }
+        window.addEventListener(SIDEBAR_CHANGE_EVENT, onChange)
+        return () => window.removeEventListener(SIDEBAR_CHANGE_EVENT, onChange)
+    }, [])
 
     // Don't show back button on dashboard
     const showBack = pathname !== "/dashboard"
@@ -45,23 +62,35 @@ export function Navbar() {
                     </SheetContent>
                 </Sheet>
 
+                {/* Desktop sidebar collapse — always visible next to header title */}
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    data-testid="navbar-sidebar-toggle"
+                    className="hidden md:inline-flex h-8 w-8 border-border bg-white shadow-sm"
+                    onClick={() => setSidebarOpen(toggleSidebarOpen())}
+                    aria-label={sidebarOpen ? "ยุบเมนู" : "ขยายเมนู"}
+                    title={sidebarOpen ? "ยุบเมนู Sidebar" : "ขยายเมนู Sidebar"}
+                >
+                    {sidebarOpen ? (
+                        <PanelLeftClose className="h-4 w-4" />
+                    ) : (
+                        <PanelLeft className="h-4 w-4" />
+                    )}
+                </Button>
+
                 {showBack && (
                     <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-8 w-8 text-muted-foreground hover:text-foreground hidden md:flex">
-                        {/* Hidden on mobile to save space? Or keep? User said 'back button implementation' earlier, let's keep it but maybe hide on very small screens if needed. Actually user likes the global back button. Let's keep it visible. */}
                         <ChevronLeft className="h-4 w-4" />
                     </Button>
                 )}
-                {/* Mobile Back Button - Ensure it shows if desired */}
                 {showBack && (
                     <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-8 w-8 text-muted-foreground hover:text-foreground md:hidden">
                         <ChevronLeft className="h-4 w-4" />
                     </Button>
                 )}
 
-
-                <div className="font-medium text-muted-foreground md:hidden">
-                    {/* LaunchFlow - removed as it's in the menu now or duplicates space. Let's keep it minimal */}
-                </div>
                 <div className="hidden md:block text-sm text-muted-foreground">
                     Workflow Workspace
                 </div>

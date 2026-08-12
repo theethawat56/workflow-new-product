@@ -6,7 +6,11 @@
         },
         {
             "path": "/api/integrations/zortout/sync-orders?mode=delta&days=3",
-            "schedule": "15 20 * * *"
+            "schedule": "0 */4 * * *"
+        },
+        {
+            "path": "/api/integrations/dataslot/sync-kol",
+            "schedule": "30 20 * * *"
         }
     ]
 }
