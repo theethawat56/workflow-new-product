@@ -3,10 +3,11 @@
  *
  * Two modes selected by the `mode` query parameter:
  *
- *   1. `delta` (default) — used by the every-4-hour cron. Re-syncs the trailing N
- *      days (default 3) so status flips (Pending → Success → Voided) and
- *      newly-created orders both land in the sheet. Idempotent via row_id
- *      upsert. Always completes well under 60s for typical daily volume.
+ *   1. `delta` (default) — used by the every-4-hour cron (6× daily entries on
+ *      Hobby-compatible schedules). Re-syncs the trailing N days (default 3)
+ *      so status flips (Pending → Success → Voided) and newly-created orders
+ *      both land in the sheet. Idempotent via row_id upsert. Always completes
+ *      well under 60s for typical daily volume.
  *
  *   2. `backfill` — chunked historical sync. Each invocation processes up to
  *      `chunkDays` (default 14) days going *backwards* from the previously

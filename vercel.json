@@ -6,7 +6,27 @@
         },
         {
             "path": "/api/integrations/zortout/sync-orders?mode=delta&days=3",
-            "schedule": "0 */4 * * *"
+            "schedule": "0 0 * * *"
+        },
+        {
+            "path": "/api/integrations/zortout/sync-orders?mode=delta&days=3",
+            "schedule": "0 4 * * *"
+        },
+        {
+            "path": "/api/integrations/zortout/sync-orders?mode=delta&days=3",
+            "schedule": "0 8 * * *"
+        },
+        {
+            "path": "/api/integrations/zortout/sync-orders?mode=delta&days=3",
+            "schedule": "0 12 * * *"
+        },
+        {
+            "path": "/api/integrations/zortout/sync-orders?mode=delta&days=3",
+            "schedule": "0 16 * * *"
+        },
+        {
+            "path": "/api/integrations/zortout/sync-orders?mode=delta&days=3",
+            "schedule": "0 20 * * *"
         },
         {
             "path": "/api/integrations/dataslot/sync-kol",
